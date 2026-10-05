@@ -11,3 +11,7 @@
 - D9: DNS error mapping verified against hickory-proto 0.25.2 source: NxDomain via `is_nx_domain`, Timeout/RequestRefused via `ProtoErrorKind`, ServFail via `NoRecordsFound{response_code: ServFail}`; all else `Unknown` with raw reason.
 - D10: accuracy gate is fixture-based (`lab/*.json` data files, `.test` domain) pending a live DNS lab; numbers labeled as fixture, not live.
 - D11: lore skill's `.lore/` store not created — project memory stays in `.docs/` per standing docs rule.
+- D12: live crt.sh failure (sandbox egress 502) accepted as environmental; re-verify from an unrestricted network later. No retry/backoff changes: single-shot fetch + 30s timeout is correct per source.
+- D13: no local fixture DNS server; the 12-host JSON corpus gate stands as Phase 2 accuracy evidence, honestly labeled fixture-based. Live-DNS proof deferred to a real network.
+- D14: CertSpotter, NS/MX/CNAME-derived hosts, reverse DNS, permutations, API-key sources stay parked; next discovery touch lands them as one batch, not a trickle.
+- D15: `.agents/` (112 files, 0.9MB tooling) stays untracked; phase diffs remain code + docs only.

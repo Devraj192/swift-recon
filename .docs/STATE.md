@@ -26,9 +26,14 @@
 - Phase 2 (DNS + subdomain discovery) — not started. Do not start until Phase 1 commit lands.
 - Open: `sentinelscan-core` API (PRD Q5) still unresolved; stub stands.
 
+## Accepted limitations (user-confirmed, see D12-D15)
+
+- Live crt.sh unreachable from this sandbox (egress 502); re-verify passive fetch from an unrestricted network later. Failure path already proven live.
+- Sandbox DNS returns doctored answers; active discovery has no live proof. Fixture gate stands as Phase 2 evidence.
+- Extra passive sources, NS/MX/CNAME derivation, reverse DNS, permutations, API-key sources: parked for a later discovery batch.
+- `.agents/` intentionally untracked.
+
 ## Not verified
 
-- Live crt.sh fetch in this sandbox: egress returns HTTP 502, so the passive source was exercised live only through its failure path (correct note + continue). Parsing covered by fixture tests.
-- Live DNS here resolves via sandbox-doctored answers; brute-force found 0 for example.com as expected (no mini-list names exist). Trusted re-validation logic covered by code path, not live proof.
 - `cargo nextest` not installed — used `cargo test` per rules fallback.
 - `since-cutoff` skill is Python-only — N/A for this Rust workspace.
