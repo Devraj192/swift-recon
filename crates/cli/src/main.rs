@@ -282,6 +282,8 @@ async fn run_pipeline(
     let mut http_records: Vec<swiftrecon_net::http::HttpRecord> = Vec::new();
     let mut tech_rows: Vec<swiftrecon_report::TechRow> = Vec::new();
     let mut san_hosts: Vec<(String, f64, Vec<String>)> = Vec::new();
+    let mut endpoint_rows: Vec<swiftrecon_report::EndpointRow> = Vec::new();
+    let mut param_rows: Vec<swiftrecon_report::ParamRow> = Vec::new();
     let mut soft404_dropped = 0;
 
     if !passive {
@@ -508,6 +510,27 @@ async fn run_pipeline(
             subdomains.push(san);
             facts.push(fact);
         }
+
+        let known_hosts: HashSet<String> = subdomains.iter().cloned().collect();
+        let crawl_ctx = CrawlCtx {
+            scan_id,
+            guard,
+            store,
+            pool: &pool,
+            http_client: &http_client,
+            http_records: &http_records,
+            domain: domain.as_str(),
+            known_hosts: &known_hosts,
+        };
+        let crawl_out = run_crawl_stage(&crawl_ctx).await?;
+        facts.extend(crawl_out.facts);
+        for host in crawl_out.subdomains {
+            if !subdomains.contains(&host) {
+                subdomains.push(host);
+            }
+        }
+        endpoint_rows = crawl_out.endpoint_rows;
+        param_rows = crawl_out.param_rows;
     }
 
     let report = swiftrecon_report::ScanReport {
@@ -517,6 +540,8 @@ async fn run_pipeline(
         ports: port_rows,
         http: http_records,
         technologies: tech_rows,
+        endpoints: endpoint_rows,
+        parameters: param_rows,
     };
     match output {
         "jsonl" => {
@@ -539,12 +564,434 @@ async fn run_pipeline(
         _ => {}
     }
     eprintln!(
-        "scan {scan_id}: {} subdomains, {} open ports, {} technologies (soft404 dropped {soft404_dropped}, passive={passive})",
+        "scan {scan_id}: {} subdomains, {} open ports, {} technologies, {} endpoints, {} parameters (soft404 dropped {soft404_dropped}, passive={passive})",
         report.subdomains.len(),
         report.ports.iter().filter(|r| r.state == "open").count(),
         report.technologies.len(),
+        report.endpoints.len(),
+        report.parameters.len(),
     );
     Ok(())
+}
+
+/// Maximum JS files analyzed per scan (hash-deduped before this cap).
+const MAX_JS_FILES: usize = 50;
+
+/// Shared inputs for the crawl stage (keeps arg counts within limits).
+struct CrawlCtx<'a> {
+    scan_id: &'a str,
+    guard: &'a ScopeGuard,
+    store: &'a Store,
+    pool: &'a swiftrecon_net::ResolverPool,
+    http_client: &'a swiftrecon_net::http::HttpClient,
+    http_records: &'a [swiftrecon_net::http::HttpRecord],
+    domain: &'a str,
+    known_hosts: &'a std::collections::HashSet<String>,
+}
+
+/// Owned outputs of the crawl stage.
+#[derive(Default)]
+struct CrawlOutputs {
+    facts: Vec<swiftrecon_core::Fact>,
+    subdomains: Vec<String>,
+    endpoint_rows: Vec<swiftrecon_report::EndpointRow>,
+    param_rows: Vec<swiftrecon_report::ParamRow>,
+}
+
+/// Crawl + JS + endpoint/parameter stage. Seeds are the live HTTP pages;
+/// robots/sitemap, page links, JS, OpenAPI docs, and Wayback history all
+/// feed one canonicalize -> template -> merge pipeline.
+async fn run_crawl_stage(ctx: &CrawlCtx<'_>) -> Result<CrawlOutputs> {
+    let CrawlCtx {
+        scan_id,
+        guard,
+        store,
+        pool,
+        http_client,
+        http_records,
+        domain,
+        known_hosts,
+    } = ctx;
+    let mut out = CrawlOutputs::default();
+    use std::collections::{HashMap, HashSet};
+    use swiftrecon_core::{Confidence, Evidence, Fact};
+
+    let seeds: Vec<String> = http_records.iter().map(|r| r.final_url.clone()).collect();
+    if seeds.is_empty() {
+        return Ok(CrawlOutputs::default());
+    }
+    let completed: HashSet<String> = store.done_keys(scan_id, "crawl").into_iter().collect();
+    let limiter = swiftrecon_engine::AdaptiveLimiter::new(std::time::Duration::from_millis(200));
+    let config = swiftrecon_web::CrawlConfig {
+        max_depth: 3,
+        max_urls_per_host: 100,
+        max_pages_total: 500,
+        politeness_ms: 200,
+        respect_robots: false,
+        trap_threshold: 20,
+    };
+    let pages = swiftrecon_web::crawl(
+        http_client,
+        pool,
+        guard,
+        &limiter,
+        &seeds,
+        &completed,
+        &config,
+    )
+    .await;
+    for page in &pages {
+        store.upsert_work_unit(
+            scan_id,
+            "crawl",
+            &page.url,
+            swiftrecon_store::WorkState::Done,
+        );
+        let template = page_template(&page.url);
+        store.insert_url(scan_id, &page.url, &template, &["crawler".to_string()]);
+        out.facts.push(Fact::new(
+            scan_id,
+            "url",
+            &page.url,
+            vec!["crawler".to_string()],
+            vec![Evidence::observed("crawl", "page", &page.url)],
+            Confidence::new(0.7).unwrap_or(Confidence(0.6)),
+        ));
+    }
+    let mut discovered_hosts: HashSet<String> = HashSet::new();
+
+    // Candidate endpoints: (url, method, source).
+    let mut candidates: Vec<(String, String, String)> = Vec::new();
+    for page in &pages {
+        for link in page
+            .links
+            .iter()
+            .chain(page.scripts.iter())
+            .chain(page.iframes.iter())
+        {
+            candidates.push((link.clone(), "GET".to_string(), "crawler".to_string()));
+        }
+        for form in &page.forms {
+            candidates.push((form.action.clone(), form.method.clone(), "form".to_string()));
+        }
+    }
+    // robots/sitemap per crawled host.
+    let mut bases: HashSet<String> = HashSet::new();
+    for page in &pages {
+        if let Ok(url) = url::Url::parse(&page.url) {
+            if let Some(host) = url.host_str() {
+                let mut base = format!("{}://{host}", url.scheme());
+                if let Some(port) = url.port() {
+                    base.push_str(&format!(":{port}"));
+                }
+                bases.insert(base);
+            }
+        }
+    }
+    for base in &bases {
+        let (paths, sitemap_urls) =
+            swiftrecon_web::openapi::robots_endpoints(http_client, guard, base).await;
+        for path in paths {
+            candidates.push((path, "GET".to_string(), "robots".to_string()));
+        }
+        for url in sitemap_urls {
+            candidates.push((url, "GET".to_string(), "sitemap".to_string()));
+        }
+    }
+    // OpenAPI docs per base with live HTTP.
+    let mut openapi_endpoints: Vec<(String, Vec<String>)> = Vec::new();
+    for base in &bases {
+        for endpoint in swiftrecon_web::openapi::discover_openapi(http_client, guard, base).await {
+            let methods = if endpoint.methods.is_empty() {
+                vec!["GET".to_string()]
+            } else {
+                endpoint.methods.clone()
+            };
+            openapi_endpoints.push((endpoint.path, methods));
+        }
+    }
+    // JavaScript: unique files by hash, then inline scripts.
+    let mut js_urls: Vec<(String, String)> = Vec::new();
+    for page in &pages {
+        for script in &page.scripts {
+            js_urls.push((script.clone(), page.url.clone()));
+        }
+    }
+    let mut seen_hashes: HashSet<u64> = HashSet::new();
+    let mut js_sources: Vec<(String, String)> = Vec::new();
+    for (js_url, _page_url) in js_urls {
+        if seen_hashes.len() >= MAX_JS_FILES {
+            break;
+        }
+        let Some(canonical) = swiftrecon_web::canonicalize(&js_url) else {
+            continue;
+        };
+        if store.done_keys(scan_id, "js").contains(&canonical) {
+            continue;
+        }
+        let Ok(text) = http_client.fetch_text(guard, &canonical).await else {
+            continue;
+        };
+        let hash = xxhash_rust::xxh3::xxh3_64(text.as_bytes());
+        if !seen_hashes.insert(hash) {
+            continue;
+        }
+        store.upsert_work_unit(scan_id, "js", &canonical, swiftrecon_store::WorkState::Done);
+        let finding = swiftrecon_web::js::analyze(&text);
+        store.insert_js(scan_id, &canonical, hash, finding.parsed_ok);
+        out.facts.push(Fact::new(
+            scan_id,
+            "js_file",
+            &canonical,
+            vec!["js-analysis".to_string()],
+            vec![Evidence::observed(
+                "js",
+                if finding.parsed_ok {
+                    "ast"
+                } else {
+                    "regex-fallback"
+                },
+                &canonical,
+            )],
+            Confidence::new(if finding.parsed_ok { 0.75 } else { 0.5 }).unwrap_or(Confidence(0.6)),
+        ));
+        for secret in &finding.secret_kinds {
+            let subject = format!("secret:{secret}");
+            store.insert_finding(scan_id, "secret", &subject, 0.6);
+            out.facts.push(Fact::new(
+                scan_id,
+                "finding",
+                &subject,
+                vec!["js-analysis".to_string()],
+                vec![Evidence::observed("js", "secret-kind", secret)],
+                Confidence::new(0.6).unwrap_or(Confidence(0.6)),
+            ));
+        }
+        for url in &finding.urls {
+            if let Some(abs) = swiftrecon_web::resolve_against(&canonical, url) {
+                js_sources.push((abs, "js".to_string()));
+            }
+        }
+        for param in &finding.params {
+            js_sources.push((format!("{canonical}?{param}=1"), "js".to_string()));
+        }
+        if let Some(map) = &finding.sourcemap {
+            if let Some(abs) = swiftrecon_web::resolve_against(&canonical, map) {
+                js_sources.push((abs, "js-sourcemap".to_string()));
+            }
+        }
+    }
+    for page in &pages {
+        for inline in &page.inline_scripts {
+            let finding = swiftrecon_web::js::analyze(inline);
+            for url in &finding.urls {
+                if let Some(abs) = swiftrecon_web::resolve_against(&page.url, url) {
+                    js_sources.push((abs, "inline-js".to_string()));
+                }
+            }
+            for param in &finding.params {
+                js_sources.push((format!("{}?{param}=1", page.url), "inline-js".to_string()));
+            }
+        }
+    }
+    // Historical URLs (passive, once per domain).
+    for url in swiftrecon_web::openapi::wayback_urls(http_client, guard, domain).await {
+        candidates.push((url, "GET".to_string(), "wayback".to_string()));
+    }
+    for (url, _from) in js_sources {
+        candidates.push((url, "GET".to_string(), "js".to_string()));
+    }
+
+    // Merge: canonicalize, scope-gate, template, group methods/sources.
+    let mut endpoints: HashMap<String, (HashSet<String>, HashSet<String>)> = HashMap::new();
+    let mut params: HashMap<(String, String, String), (String, HashSet<String>)> = HashMap::new();
+    for (raw, method, source) in candidates {
+        let Some(canonical) = swiftrecon_web::canonicalize(&raw) else {
+            continue;
+        };
+        let Ok(parsed) = url::Url::parse(&canonical) else {
+            continue;
+        };
+        let host = parsed.host_str().unwrap_or("").to_string();
+        if !guard.allow_dns(&host) {
+            continue;
+        }
+        discovered_hosts.insert(host.clone());
+        let template = format!(
+            "{}://{}{}",
+            parsed.scheme(),
+            host_with_port(&parsed),
+            swiftrecon_web::template_path(parsed.path())
+        );
+        endpoints
+            .entry(template.clone())
+            .or_default()
+            .0
+            .insert(method.clone());
+        endpoints
+            .entry(template.clone())
+            .or_default()
+            .1
+            .insert(source.clone());
+        for param in swiftrecon_web::query_params(&canonical, &source) {
+            let location = format!("{:?}", param.location).to_lowercase();
+            params
+                .entry((template.clone(), param.name.clone(), location))
+                .or_insert((method.clone(), HashSet::new()))
+                .1
+                .insert(source.clone());
+        }
+    }
+    // Form inputs carry their own method/location.
+    for page in &pages {
+        for form in &page.forms {
+            let Some(canonical) = swiftrecon_web::canonicalize(&form.action) else {
+                continue;
+            };
+            let Ok(parsed) = url::Url::parse(&canonical) else {
+                continue;
+            };
+            let template = format!(
+                "{}://{}{}",
+                parsed.scheme(),
+                host_with_port(&parsed),
+                swiftrecon_web::template_path(parsed.path())
+            );
+            let location = if form.method == "GET" {
+                "query"
+            } else {
+                "body"
+            }
+            .to_string();
+            for input in &form.inputs {
+                params
+                    .entry((template.clone(), input.clone(), location.clone()))
+                    .or_insert((form.method.clone(), HashSet::new()))
+                    .1
+                    .insert("form".to_string());
+            }
+        }
+    }
+    for (path, methods) in openapi_endpoints {
+        let Some(canonical) = swiftrecon_web::canonicalize(&path) else {
+            continue;
+        };
+        let Ok(parsed) = url::Url::parse(&canonical) else {
+            continue;
+        };
+        if !guard.allow_dns(parsed.host_str().unwrap_or("")) {
+            continue;
+        }
+        let template = format!(
+            "{}://{}{}",
+            parsed.scheme(),
+            host_with_port(&parsed),
+            swiftrecon_web::template_path(parsed.path())
+        );
+        let entry = endpoints.entry(template).or_default();
+        for method in methods {
+            entry.0.insert(method);
+        }
+        entry.1.insert("openapi".to_string());
+    }
+
+    let mut endpoint_list: Vec<(String, Vec<String>, Vec<String>)> = endpoints
+        .into_iter()
+        .map(|(template, (methods, sources))| {
+            let mut methods: Vec<String> = methods.into_iter().collect();
+            methods.sort();
+            let mut sources: Vec<String> = sources.into_iter().collect();
+            sources.sort();
+            (template, methods, sources)
+        })
+        .collect();
+    endpoint_list.sort();
+    for (template, methods, sources) in &endpoint_list {
+        let confidence = if sources.len() >= 2 { 0.85 } else { 0.7 };
+        store.insert_endpoint(scan_id, template, methods, sources);
+        out.facts.push(Fact::new(
+            scan_id,
+            "endpoint",
+            template,
+            sources.clone(),
+            vec![Evidence::observed(
+                "discovery",
+                "endpoint-source",
+                &sources.join(","),
+            )],
+            Confidence::new(confidence).unwrap_or(Confidence(0.6)),
+        ));
+        out.endpoint_rows.push(swiftrecon_report::EndpointRow {
+            template: template.clone(),
+            methods: methods.clone(),
+            sources: sources.clone(),
+        });
+    }
+    let mut param_list: Vec<(String, String, String, String, Vec<String>)> = params
+        .into_iter()
+        .map(|((endpoint, name, location), (method, sources))| {
+            let mut sources: Vec<String> = sources.into_iter().collect();
+            sources.sort();
+            (endpoint, name, location, method, sources)
+        })
+        .collect();
+    param_list.sort();
+    for (endpoint, name, location, method, sources) in &param_list {
+        store.insert_param(scan_id, endpoint, name, location, method);
+        out.facts.push(Fact::new(
+            scan_id,
+            "parameter",
+            &format!("{endpoint} {name} ({location})"),
+            sources.clone(),
+            vec![Evidence::observed(
+                "discovery",
+                "param-source",
+                &sources.join(","),
+            )],
+            Confidence::new(0.7).unwrap_or(Confidence(0.6)),
+        ));
+        out.param_rows.push(swiftrecon_report::ParamRow {
+            endpoint: endpoint.clone(),
+            name: name.clone(),
+            location: location.clone(),
+            method: method.clone(),
+        });
+    }
+    for host in discovered_hosts {
+        if known_hosts.contains(&host) {
+            continue;
+        }
+        out.facts.push(Fact::new(
+            scan_id,
+            "subdomain",
+            &host,
+            vec!["endpoint-analysis".to_string()],
+            vec![Evidence::observed("discovery", "endpoint-host", &host)],
+            Confidence::new(0.6).unwrap_or(Confidence(0.6)),
+        ));
+        out.subdomains.push(host);
+    }
+    Ok(out)
+}
+
+/// Canonical URL with its path templated (endpoint identity).
+fn page_template(canonical: &str) -> String {
+    match url::Url::parse(canonical) {
+        Ok(parsed) => format!(
+            "{}://{}{}",
+            parsed.scheme(),
+            host_with_port(&parsed),
+            swiftrecon_web::template_path(parsed.path())
+        ),
+        Err(_) => canonical.to_string(),
+    }
+}
+
+fn host_with_port(parsed: &url::Url) -> String {
+    match parsed.port() {
+        Some(port) => format!("{}:{port}", parsed.host_str().unwrap_or("")),
+        None => parsed.host_str().unwrap_or("").to_string(),
+    }
 }
 
 /// Meta generator tag from an HTML excerpt (fingerprint signal).

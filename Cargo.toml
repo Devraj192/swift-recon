@@ -5,7 +5,7 @@ members = [
     "crates/net",
     "crates/discover",
     "crates/fingerprint",
-    "crates/report",
+    "crates/web",
     "crates/engine",
     "crates/store",
     "crates/cli",
@@ -26,9 +26,15 @@ hickory-resolver = "0.25"
 ipnet = "2"
 mimalloc = "0.1"
 minijinja = "2"
+oxc_allocator = "0.153"
+oxc_ast = "0.153"
+oxc_ast_visit = "0.153"
+oxc_parser = "0.153"
+oxc_span = "0.153"
 proptest = "1"
 psl = "2"
-reqwest = { version = "0.12", default-features = false, features = ["rustls-tls-webpki-roots"] }
+regex = "1"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls-webpki-roots", "gzip", "deflate", "brotli"] }
 rusqlite = { version = "0.31", features = ["bundled"] }
 scraper = "0.23"
 sentinelscan-core = { git = "https://github.com/Devraj192/sentinel-scanner", rev = "a5deb6fd37a35c72d0d5ba2b0de2386a56a8efd3" }
@@ -53,6 +59,7 @@ swiftrecon-scope = { path = "crates/scope" }
 swiftrecon-net = { path = "crates/net" }
 swiftrecon-discover = { path = "crates/discover" }
 swiftrecon-fingerprint = { path = "crates/fingerprint" }
+swiftrecon-web = { path = "crates/web" }
 swiftrecon-report = { path = "crates/report" }
 swiftrecon-engine = { path = "crates/engine" }
 swiftrecon-store = { path = "crates/store" }

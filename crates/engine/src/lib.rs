@@ -44,7 +44,10 @@ impl Default for Limits {
 // Scheduler
 // ---------------------------------------------------------------------------
 
+pub mod adaptive;
 pub mod ports;
+
+pub use adaptive::AdaptiveLimiter;
 
 pub use ports::{dedup_ips, parse_ports, PortFact, SentinelPorts, WEB_PORTS};
 

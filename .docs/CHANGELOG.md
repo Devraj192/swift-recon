@@ -1,6 +1,12 @@
 # SwiftRecon — Changelog
 
-## Phase 3 — Live hosts (pending commit)
+## Phase 4 — Crawl, JS, endpoints, parameters (pending commit)
+
+- New `crates/web`: canonicalize (idempotent, proptested) + `{id}` templating + param extraction; polite crawler (depth/caps/trap-collapse/robots-parse-only) with resume-exact completed set; oxc AST JS analysis with regex fallback (secrets store kinds only); OpenAPI/Wayback/robots/sitemap sources.
+- Engine `AdaptiveLimiter` (AIMD) wired into crawl; store migration 003 (urls, js_files, endpoints, parameters, findings); report gains endpoint/parameter sections.
+- Lab SPA recall 1.0000/1.0000; kill-and-resume proven against a hit-counting loopback server.
+- Fixes from tests: path-aware `probe_url` (crawler fetched `/` always), body streaming caps, ring-only crypto follow-through.
+- Limitations: brute-force DNS sequential; HTTP peer-IP pinning gap (D16) unchanged; no deobfuscation (per PRD).
 
 - Port discovery via pinned `sentinelscan-core` rev `a5deb6f` (API inspected in vendored source first); dual-guard bridge, per-IP dedup, `web` set = 80/443/8000/8080/8443; `top100` deferred.
 - HTTP probing with manual redirect chains + per-hop scope checks, soft-404 filtering, cookie-name-only capture; bounded 16-way probe concurrency.

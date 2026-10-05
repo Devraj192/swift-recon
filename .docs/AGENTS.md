@@ -5,7 +5,13 @@ Docs live only in `.docs/` — root `*.md` is gitignored by project rule.
 
 ## Current phase
 
-Phase 3 live hosts (PRD §11). Work only on this phase. One commit per phase.
+Phase 4 crawl/JS/endpoints (PRD §11). Work only on this phase. One commit per phase.
+
+## What exists (Phase 4 adds)
+
+- `crates/web`: `url` (canonicalize/template/params/resolve), `crawl` (polite, trap-safe, resume-exact), `js` (oxc AST + regex fallback, redacted secrets), `openapi` (spec/Wayback/robots-sitemap sources).
+- Engine `AdaptiveLimiter` (AIMD backoff/recovery); store migration 003; report endpoint/parameter sections.
+- Lab SPA recall 1.0/1.0; kill-and-resume proven live.
 
 ## What exists (Phase 3 adds)
 

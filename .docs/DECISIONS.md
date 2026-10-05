@@ -20,3 +20,7 @@
 - D18: all response body reads carry explicit 30s timeouts (reqwest timeout excludes streaming); found via a live hang against a stalling proxy.
 - D19: probe stage runs 16-way bounded concurrency (JoinSet + semaphore), outputs re-sorted deterministic; ports already concurrent via sentinel scheduler.
 - D20: workspace rusqlite downgraded 0.32 to 0.31 to unify the native `sqlite3` link with sentinelscan-core; no API impact.
+- D21: oxc sibling crates (allocator/ast/visit/span) named directly — inherent to the listed `oxc_parser` stack line; pinned 0.153 in lockstep.
+- D22: crawler fetches real paths via `probe_url` (Phase 3 `probe` always hit `/`); caught by the kill-resume hit map, not review.
+- D23: `run_crawl_stage` takes context/output structs instead of 11 args (no `#[allow]` per rules).
+- D24: new endpoint hosts feed back into subdomains as `endpoint-analysis` facts (deduped against known).

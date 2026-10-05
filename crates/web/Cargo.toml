@@ -1,0 +1,28 @@
+[package]
+name = "swiftrecon-web"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+oxc_allocator.workspace = true
+oxc_ast.workspace = true
+oxc_ast_visit.workspace = true
+oxc_parser.workspace = true
+oxc_span.workspace = true
+regex.workspace = true
+scraper.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+url.workspace = true
+swiftrecon-core.workspace = true
+swiftrecon-engine.workspace = true
+swiftrecon-scope.workspace = true
+swiftrecon-net.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true

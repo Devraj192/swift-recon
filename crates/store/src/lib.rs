@@ -93,6 +93,45 @@ CREATE TABLE IF NOT EXISTS technologies (
 );
 ";
 
+const MIGRATION_003: &str = "
+CREATE TABLE IF NOT EXISTS urls (
+    scan_id TEXT NOT NULL,
+    canonical TEXT NOT NULL,
+    template TEXT NOT NULL,
+    sources TEXT NOT NULL,
+    PRIMARY KEY (scan_id, canonical)
+);
+CREATE TABLE IF NOT EXISTS js_files (
+    scan_id TEXT NOT NULL,
+    url TEXT NOT NULL,
+    hash INTEGER NOT NULL,
+    parsed_ok INTEGER NOT NULL,
+    PRIMARY KEY (scan_id, url)
+);
+CREATE TABLE IF NOT EXISTS endpoints (
+    scan_id TEXT NOT NULL,
+    template TEXT NOT NULL,
+    methods TEXT NOT NULL,
+    sources TEXT NOT NULL,
+    PRIMARY KEY (scan_id, template)
+);
+CREATE TABLE IF NOT EXISTS parameters (
+    scan_id TEXT NOT NULL,
+    endpoint TEXT NOT NULL,
+    name TEXT NOT NULL,
+    location TEXT NOT NULL,
+    method TEXT NOT NULL,
+    PRIMARY KEY (scan_id, endpoint, name, location)
+);
+CREATE TABLE IF NOT EXISTS findings (
+    scan_id TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    subject TEXT NOT NULL,
+    confidence REAL NOT NULL,
+    PRIMARY KEY (scan_id, kind, subject)
+);
+";
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WorkState {
     Pending,
@@ -288,6 +327,95 @@ impl Store {
         );
     }
 
+    pub fn insert_url(&self, scan_id: &str, canonical: &str, template: &str, sources: &[String]) {
+        let sources_json = serde_json::to_string(sources).unwrap_or_else(|_| "[]".to_string());
+        self.send(
+            "INSERT INTO urls (scan_id, canonical, template, sources)
+             VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT (scan_id, canonical) DO NOTHING",
+            vec![
+                scan_id.to_string(),
+                canonical.to_string(),
+                template.to_string(),
+                sources_json,
+            ],
+        );
+    }
+
+    pub fn insert_js(&self, scan_id: &str, url: &str, hash: u64, parsed_ok: bool) {
+        self.send(
+            "INSERT INTO js_files (scan_id, url, hash, parsed_ok)
+             VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT (scan_id, url) DO NOTHING",
+            vec![
+                scan_id.to_string(),
+                url.to_string(),
+                hash.to_string(),
+                (parsed_ok as u8).to_string(),
+            ],
+        );
+    }
+
+    pub fn insert_endpoint(
+        &self,
+        scan_id: &str,
+        template: &str,
+        methods: &[String],
+        sources: &[String],
+    ) {
+        let methods_json = serde_json::to_string(methods).unwrap_or_else(|_| "[]".to_string());
+        let sources_json = serde_json::to_string(sources).unwrap_or_else(|_| "[]".to_string());
+        self.send(
+            "INSERT INTO endpoints (scan_id, template, methods, sources)
+             VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT (scan_id, template) DO NOTHING",
+            vec![
+                scan_id.to_string(),
+                template.to_string(),
+                methods_json,
+                sources_json,
+            ],
+        );
+    }
+
+    pub fn insert_param(
+        &self,
+        scan_id: &str,
+        endpoint: &str,
+        name: &str,
+        location: &str,
+        method: &str,
+    ) {
+        self.send(
+            "INSERT INTO parameters (scan_id, endpoint, name, location, method)
+             VALUES (?1, ?2, ?3, ?4, ?5)
+             ON CONFLICT (scan_id, endpoint, name, location) DO NOTHING",
+            vec![
+                scan_id.to_string(),
+                endpoint.to_string(),
+                name.to_string(),
+                location.to_string(),
+                method.to_string(),
+            ],
+        );
+    }
+
+    /// Candidate finding. Values are never stored: `subject` carries the
+    /// redacted kind only (e.g. `secret:aws_key@host`).
+    pub fn insert_finding(&self, scan_id: &str, kind: &str, subject: &str, confidence: f64) {
+        self.send(
+            "INSERT INTO findings (scan_id, kind, subject, confidence)
+             VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT (scan_id, kind, subject) DO NOTHING",
+            vec![
+                scan_id.to_string(),
+                kind.to_string(),
+                subject.to_string(),
+                confidence.to_string(),
+            ],
+        );
+    }
+
     pub fn upsert_work_unit(&self, scan_id: &str, stage: &str, key: &str, state: WorkState) {
         self.send(
             "INSERT INTO work_units (scan_id, stage, key, state, attempts) VALUES (?1, ?2, ?3, ?4, 0)
@@ -299,6 +427,23 @@ impl Store {
                 state.as_str().to_string(),
             ],
         );
+    }
+
+    /// Keys already done for (scan, stage): resume skips exactly these.
+    pub fn done_keys(&self, scan_id: &str, stage: &str) -> Vec<String> {
+        let conn = match Connection::open(&self.path) {
+            Ok(conn) => conn,
+            Err(_) => return Vec::new(),
+        };
+        let mut stmt = match conn
+            .prepare("SELECT key FROM work_units WHERE scan_id=?1 AND stage=?2 AND state='done'")
+        {
+            Ok(stmt) => stmt,
+            Err(_) => return Vec::new(),
+        };
+        stmt.query_map(params![scan_id, stage], |row| row.get(0))
+            .map(|rows| rows.filter_map(Result::ok).collect())
+            .unwrap_or_default()
     }
 
     /// Count work units in a state (direct read for resume checks).
@@ -329,6 +474,7 @@ pub fn migrate(path: &Path) -> Result<(), StoreError> {
     let conn = Connection::open(path)?;
     conn.execute_batch(MIGRATION_001)?;
     conn.execute_batch(MIGRATION_002)?;
+    conn.execute_batch(MIGRATION_003)?;
     info!("store migrated at {}", path.display());
     Ok(())
 }

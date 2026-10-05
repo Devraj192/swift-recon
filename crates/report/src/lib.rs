@@ -27,6 +27,21 @@ pub struct TechRow {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EndpointRow {
+    pub template: String,
+    pub methods: Vec<String>,
+    pub sources: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ParamRow {
+    pub endpoint: String,
+    pub name: String,
+    pub location: String,
+    pub method: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ScanReport {
     pub scan_id: String,
     pub targets: Vec<String>,
@@ -34,6 +49,8 @@ pub struct ScanReport {
     pub ports: Vec<PortRow>,
     pub http: Vec<HttpRecord>,
     pub technologies: Vec<TechRow>,
+    pub endpoints: Vec<EndpointRow>,
+    pub parameters: Vec<ParamRow>,
 }
 
 /// Canonical JSON (pretty). Machine consumers read this or JSONL.
@@ -96,6 +113,12 @@ const HTML_TEMPLATE: &str = r#"<!DOCTYPE html>
 <h2>Technologies</h2>
 <table><tr><th>Host</th><th>Name</th><th>Version</th><th>Confidence</th></tr>
 {% for tech in technologies %}<tr><td>{{ tech.host }}</td><td>{{ tech.name }}</td><td>{{ tech.version }}</td><td>{{ tech.confidence }}</td></tr>{% endfor %}</table>
+<h2>Endpoints</h2>
+<table><tr><th>Template</th><th>Methods</th><th>Sources</th></tr>
+{% for endpoint in endpoints %}<tr><td>{{ endpoint.template }}</td><td>{{ endpoint.methods|join(", ") }}</td><td>{{ endpoint.sources|join(", ") }}</td></tr>{% endfor %}</table>
+<h2>Parameters</h2>
+<table><tr><th>Endpoint</th><th>Name</th><th>Location</th><th>Method</th></tr>
+{% for param in parameters %}<tr><td>{{ param.endpoint }}</td><td>{{ param.name }}</td><td>{{ param.location }}</td><td>{{ param.method }}</td></tr>{% endfor %}</table>
 </body>
 </html>
 "#;
@@ -116,6 +139,8 @@ pub fn to_html(report: &ScanReport) -> Result<String, ReportError> {
             subdomains => report.subdomains,
             ports => report.ports,
             technologies => report.technologies,
+            endpoints => report.endpoints,
+            parameters => report.parameters,
             open_count => open_count,
         })
         .map_err(|e| ReportError::Render(e.to_string()))
@@ -151,6 +176,17 @@ mod tests {
                 version: None,
                 confidence: 0.7,
                 evidence_count: 1,
+            }],
+            endpoints: vec![EndpointRow {
+                template: "http://a.example.com/users/{id}".to_string(),
+                methods: vec!["GET".to_string()],
+                sources: vec!["crawler".to_string()],
+            }],
+            parameters: vec![ParamRow {
+                endpoint: "http://a.example.com/users/{id}".to_string(),
+                name: "verbose".to_string(),
+                location: "query".to_string(),
+                method: "GET".to_string(),
             }],
         }
     }

@@ -124,6 +124,42 @@ impl HttpClient {
             .map_err(|e| HttpError::Request(e.to_string()))
     }
 
+    /// GET with retries on transport errors plus 429/5xx (with backoff).
+    /// For source fetching (OpenAPI docs, sitemaps, archives) — never for
+    /// probes, where every status is data.
+    async fn get_resilient(&self, url: &str) -> Result<reqwest::Response, HttpError> {
+        (|| async {
+            let response = self
+                .inner
+                .get(url)
+                .send()
+                .await
+                .map_err(|e| e.to_string())?;
+            let status = response.status();
+            if status.as_u16() == 429 || status.is_server_error() {
+                return Err(status.to_string());
+            }
+            Ok(response)
+        })
+        .retry(ExponentialBuilder::default())
+        .await
+        .map_err(HttpError::Request)
+    }
+
+    /// Fetch a text document (OpenAPI specs, sitemaps, robots). Scope-checked,
+    /// timeout-bounded, size-capped. Non-2xx is an error.
+    pub async fn fetch_text(&self, guard: &ScopeGuard, url: &str) -> Result<String, HttpError> {
+        if !guard.allow_connection(&url_host(url), None) {
+            return Err(HttpError::OutOfScope(url.to_string()));
+        }
+        let response = self.get_resilient(url).await?;
+        if !response.status().is_success() {
+            return Err(HttpError::Request(format!("http {}", response.status())));
+        }
+        let bytes = read_capped(response).await?;
+        Ok(String::from_utf8_lossy(&bytes).into_owned())
+    }
+
     /// Probe one scheme, following redirects manually with a scope check on
     /// every hop. `ip` is the approved resolved address (recorded, not
     /// dialed: reqwest resolves the hostname itself).
@@ -136,7 +172,26 @@ impl HttpClient {
         tls: bool,
     ) -> Result<HttpRecord, HttpError> {
         let scheme = if tls { "https" } else { "http" };
-        let mut url = format!("{scheme}://{host}:{port}/");
+        self.probe_url(guard, &format!("{scheme}://{host}:{port}/"), ip)
+            .await
+    }
+
+    /// Probe a full URL (any path), following redirects manually with a
+    /// scope check on every hop.
+    pub async fn probe_url(
+        &self,
+        guard: &ScopeGuard,
+        url: &str,
+        ip: &str,
+    ) -> Result<HttpRecord, HttpError> {
+        let parsed = url::Url::parse(url).map_err(|_| HttpError::Request("bad url".to_string()))?;
+        let host = parsed
+            .host_str()
+            .ok_or_else(|| HttpError::Request("url has no host".to_string()))?
+            .to_string();
+        let tls = parsed.scheme() == "https";
+        let port = parsed.port().unwrap_or(if tls { 443 } else { 80 });
+        let mut url = url.to_string();
         let mut chain = Vec::new();
         let start = Instant::now();
         for _ in 0..MAX_HOPS {
@@ -160,7 +215,7 @@ impl HttpClient {
                 continue;
             }
             return record_response(
-                host,
+                &host,
                 ip,
                 port,
                 tls,
@@ -214,10 +269,9 @@ async fn record_response(
     let (cookie_names, cookie_flags) = cookie_names(response.headers());
     // Body reads get an explicit timeout: reqwest's request timeout does
     // not cover streaming, and a hostile server can hold the body open.
-    let bytes = tokio::time::timeout(Duration::from_secs(30), response.bytes())
-        .await
-        .map_err(|_| HttpError::Request("body read timed out".to_string()))?
-        .map_err(|e| HttpError::Request(e.to_string()))?;
+    // Chunks are capped as they arrive: a decompression bomb expands in
+    // memory during decode, so a post-decode cap alone is not enough.
+    let bytes = read_capped(response).await?;
     let capped = &bytes[..bytes.len().min(MAX_BODY_BYTES)];
     let text = String::from_utf8_lossy(capped).into_owned();
     Ok(HttpRecord {
@@ -263,9 +317,9 @@ impl HttpClient {
             return None;
         }
         let status = response.status().as_u16();
-        let bytes = match tokio::time::timeout(Duration::from_secs(30), response.bytes()).await {
-            Ok(Ok(bytes)) => bytes,
-            _ => return None,
+        let bytes = match read_capped(response).await {
+            Ok(bytes) => bytes,
+            Err(_) => return None,
         };
         let capped = &bytes[..bytes.len().min(MAX_BODY_BYTES)];
         let text = String::from_utf8_lossy(capped);
@@ -282,6 +336,24 @@ impl Default for HttpClient {
     fn default() -> Self {
         Self::new().expect("reqwest client builds with static config")
     }
+}
+
+/// Read a response body with a timeout and a running size cap.
+async fn read_capped(mut response: reqwest::Response) -> Result<Vec<u8>, HttpError> {
+    let mut kept: Vec<u8> = Vec::new();
+    let streamed = async {
+        while kept.len() < MAX_BODY_BYTES {
+            match response.chunk().await {
+                Ok(Some(chunk)) => kept.extend_from_slice(&chunk),
+                Ok(None) => break,
+                Err(e) => return Err(HttpError::Request(e.to_string())),
+            }
+        }
+        Ok(kept)
+    };
+    tokio::time::timeout(Duration::from_secs(30), streamed)
+        .await
+        .map_err(|_| HttpError::Request("body read timed out".to_string()))?
 }
 
 fn url_host(url: &str) -> String {

@@ -1,4 +1,4 @@
-# SwiftRecon — Architecture (Phase 3)
+# SwiftRecon — Architecture (Phase 4)
 
 ## Pipeline (PRD §4)
 
@@ -17,6 +17,7 @@ crates/engine  Limits, Scheduler (mpsc + Semaphore + governor + backon + Cancell
 crates/store   migrate (scans, work_units, facts), Store writer thread (sync_channel 1024), insert_fact
 crates/cli     clap derive, mimalloc, tracing-subscriber env-filter to stderr
 crates/report  ScanReport, JSON/CSV/HTML (minijinja, escaped, CSP)
+crates/web     url (canonicalize/template/params), crawl (polite, trap-safe, resume-exact), js (oxc AST + regex), openapi (spec/wayback/robots)
 ```
 
 External (pinned): `sentinelscan-core` git rev `a5deb6f` (Apache-2.0) for port

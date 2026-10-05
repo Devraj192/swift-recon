@@ -2,10 +2,9 @@
 
 ## Status
 
-- Phase: 3 live hosts — implemented, verify loop green.
-- Tests: 47 passed (`cargo test --workspace`), incl. live loopback HTTP probe, real port probe via sentinel scheduler, lab tech precision gate.
-- Lab tech corpus (6 fixtures): precision 1.0000 — above 0.95 gate. Subdomain corpus unchanged: 1.0000 / 0.9167.
-- Live e2e (sandbox, doctored answers): full run completed — 5 subdomains, 8 open ports, 4 technologies, 4 soft-404 drops, 23 JSONL facts. Earlier run: 6 crt.sh subdomains with 0.85 agreement boost, open/filtered states with raw reasons.
+- Phase: 4 crawl/JS/endpoints — implemented, verify loop green.
+- Tests: 63 passed (`cargo test --workspace`), incl. kill-and-resume (exact skip proof), SPA recall gate, live loopback HTTP probe.
+- Lab SPA fixture (7 endpoints, 5 params): endpoint recall 1.0000, param recall 1.0000. Subdomain corpus unchanged: 1.0000 / 0.9167. Tech corpus: 1.0000.
 - Verify: `cargo fmt --check` clean, `cargo clippy --all-targets -- -D warnings` clean.
 
 ## Bug-hunt fixes (post-commit review)
