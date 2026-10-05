@@ -4,6 +4,8 @@ members = [
     "crates/scope",
     "crates/net",
     "crates/discover",
+    "crates/fingerprint",
+    "crates/report",
     "crates/engine",
     "crates/store",
     "crates/cli",
@@ -23,10 +25,18 @@ governor = "0.10"
 hickory-resolver = "0.25"
 ipnet = "2"
 mimalloc = "0.1"
+minijinja = "2"
 proptest = "1"
 psl = "2"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls-webpki-roots"] }
-rusqlite = { version = "0.32", features = ["bundled"] }
+rusqlite = { version = "0.31", features = ["bundled"] }
+scraper = "0.23"
+sentinelscan-core = { git = "https://github.com/Devraj192/sentinel-scanner", rev = "a5deb6fd37a35c72d0d5ba2b0de2386a56a8efd3" }
+# ring (not aws-lc-rs): reqwest's rustls stack uses ring; rustls panics at
+# runtime when two crypto providers are compiled in.
+tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "logging", "tls12"] }
+x509-parser = "0.17"
+xxhash-rust = { version = "0.8", features = ["xxh3"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tempfile = "3"
@@ -37,10 +47,13 @@ toml = "0.8"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 url = "2"
+webpki-roots = "1"
 swiftrecon-core = { path = "crates/core" }
 swiftrecon-scope = { path = "crates/scope" }
 swiftrecon-net = { path = "crates/net" }
 swiftrecon-discover = { path = "crates/discover" }
+swiftrecon-fingerprint = { path = "crates/fingerprint" }
+swiftrecon-report = { path = "crates/report" }
 swiftrecon-engine = { path = "crates/engine" }
 swiftrecon-store = { path = "crates/store" }
 

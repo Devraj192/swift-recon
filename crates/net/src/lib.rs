@@ -3,6 +3,11 @@
 //! DNS outcomes stay distinct: NXDOMAIN, SERVFAIL, timeout, and refused are
 //! never collapsed into "doesn't exist". Every query target passes the
 //! `ScopeGuard` before any packet leaves.
+//!
+//! Also home to HTTP probing ([`http`]) and TLS metadata ([`tls`]).
+
+pub mod http;
+pub mod tls;
 
 use governor::{Quota, RateLimiter};
 use hickory_resolver::config::ResolverConfig;

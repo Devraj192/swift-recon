@@ -299,6 +299,11 @@ impl ScopeGuard {
         self.scope.host_allowed(host)
     }
 
+    /// Non-mutating hostname + resolved-IP check (no block log).
+    pub fn allow_connection(&self, host: &str, ip: Option<&IpAddr>) -> bool {
+        self.scope.connection_allowed(host, ip)
+    }
+
     pub fn allow_tcp(&mut self, host: &str, ip: Option<&IpAddr>) -> bool {
         let allowed = self.scope.connection_allowed(host, ip);
         if !allowed {

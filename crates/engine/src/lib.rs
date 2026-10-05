@@ -2,8 +2,8 @@
 //! retries with jittered backoff, timeouts, cancellation, pause/resume.
 //!
 //! Phase 1 only: the DAG, channels, and limiters. Actual discovery stages
-//! arrive in later phases. Port scanning will plug in here behind
-//! `PortProvider` once `sentinelscan-core` exposes a stable API.
+//! arrive in later phases. Port scanning plugs in here behind the
+//! `ports::SentinelPorts` adapter over `sentinelscan-core`.
 
 use backon::{ExponentialBuilder, Retryable};
 use governor::{Quota, RateLimiter};
@@ -44,14 +44,9 @@ impl Default for Limits {
 // Scheduler
 // ---------------------------------------------------------------------------
 
-/// Future port backend (e.g. `sentinelscan-core`). Stubbed in Phase 1 so the
-/// workspace compiles without that crate; Phase 3 wires the real backend.
-pub trait PortProvider: Send + Sync {
-    fn probe(&self, ip: String, port: u16) -> impl std::future::Future<Output = bool> + Send + '_ {
-        let _ = (ip, port);
-        async { false }
-    }
-}
+pub mod ports;
+
+pub use ports::{dedup_ips, parse_ports, PortFact, SentinelPorts, WEB_PORTS};
 
 pub struct Scheduler {
     limits: Limits,

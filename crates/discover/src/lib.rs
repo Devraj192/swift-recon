@@ -140,9 +140,11 @@ impl Source for CrtShSource {
                 format!("http {}", response.status()),
             ));
         }
-        let text = response
-            .text()
+        let text = tokio::time::timeout(Duration::from_secs(30), response.text())
             .await
+            .map_err(|_| {
+                DiscoverError::SourceFailed("crtsh".to_string(), "body read timed out".to_string())
+            })?
             .map_err(|e| DiscoverError::SourceFailed("crtsh".to_string(), e.to_string()))?;
         Ok(parse_crtsh_json(&text, &domain))
     }

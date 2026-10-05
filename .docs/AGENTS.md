@@ -5,7 +5,16 @@ Docs live only in `.docs/` — root `*.md` is gitignored by project rule.
 
 ## Current phase
 
-Phase 2 DNS + subdomain discovery (PRD §11). Work only on this phase. One commit per phase.
+Phase 3 live hosts (PRD §11). Work only on this phase. One commit per phase.
+
+## What exists (Phase 3 adds)
+
+- `crates/engine/ports`: `SentinelPorts` over pinned `sentinelscan-core` (`scan_ports`), dual-guard bridge (`allow_ip` only for approved IPs), `parse_ports` (web/lists/ranges; top100 deferred), per-IP dedup.
+- `crates/net/http`: manual redirect chains + per-hop scope check, soft-404 shapes, cookie-name-only capture, retry transient only, 30s body timeouts.
+- `crates/net/tls`: recording verifier (completes handshake), version/cipher/subject/issuer/SANs/validity; ring-only crypto (D17).
+- `crates/fingerprint`: TOML rule engine v1 (`rules/fingerprint.toml`), evidence + capped rubric, implies/excludes.
+- `crates/report`: JSON/CSV/single-file HTML (escaped, CSP).
+- Store migration 002 (ports, http_services, tls_info, technologies); CLI `--ports`, `--output terminal|jsonl|json|csv|html`.
 
 ## What exists (Phase 2 adds)
 

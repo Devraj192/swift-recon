@@ -12,6 +12,7 @@ path = "src/main.rs"
 [dependencies]
 anyhow.workspace = true
 clap.workspace = true
+scraper.workspace = true
 serde_json.workspace = true
 tokio.workspace = true
 tracing.workspace = true
@@ -20,6 +21,8 @@ swiftrecon-core.workspace = true
 swiftrecon-scope.workspace = true
 swiftrecon-net.workspace = true
 swiftrecon-discover.workspace = true
+swiftrecon-fingerprint.workspace = true
+swiftrecon-report.workspace = true
 swiftrecon-engine.workspace = true
 swiftrecon-store.workspace = true
 mimalloc.workspace = true

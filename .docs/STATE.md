@@ -2,10 +2,10 @@
 
 ## Status
 
-- Phase: 2 DNS + subdomain discovery — implemented, verify loop green.
-- Tests: 29 passed (`cargo test --workspace`): core 3, scope 8, net 3, discover 7, engine 4, store 2, cli 2.
-- Lab corpus (`lab/`, 12-host fixture, scripted answers): precision 1.0000, recall 0.9167 — above PRD targets (≥0.98 / ≥0.90). Live-DNS lab pending.
-- Smoke: `scan --passive --output jsonl` and active `scan` run end to end; JSONL on stdout, summary on stderr; source failure degrades gracefully (work unit marked failed, scan continues).
+- Phase: 3 live hosts — implemented, verify loop green.
+- Tests: 47 passed (`cargo test --workspace`), incl. live loopback HTTP probe, real port probe via sentinel scheduler, lab tech precision gate.
+- Lab tech corpus (6 fixtures): precision 1.0000 — above 0.95 gate. Subdomain corpus unchanged: 1.0000 / 0.9167.
+- Live e2e (sandbox, doctored answers): full run completed — 5 subdomains, 8 open ports, 4 technologies, 4 soft-404 drops, 23 JSONL facts. Earlier run: 6 crt.sh subdomains with 0.85 agreement boost, open/filtered states with raw reasons.
 - Verify: `cargo fmt --check` clean, `cargo clippy --all-targets -- -D warnings` clean.
 
 ## Bug-hunt fixes (post-commit review)
@@ -29,9 +29,10 @@
 ## Accepted limitations (user-confirmed, see D12-D15)
 
 - Live crt.sh unreachable from this sandbox (egress 502); re-verify passive fetch from an unrestricted network later. Failure path already proven live.
-- Sandbox DNS returns doctored answers; active discovery has no live proof. Fixture gate stands as Phase 2 evidence.
+- Sandbox DNS returns doctored answers; treat live e2e numbers as pipeline proof, not accuracy claims. Fixture gates stand as Phase 2/3 evidence.
 - Extra passive sources, NS/MX/CNAME derivation, reverse DNS, permutations, API-key sources: parked for a later discovery batch.
 - `.agents/` intentionally untracked.
+- HTTP probes use hostname URLs (virtual-host aware per PRD); peer-IP pinning at the socket is a documented gap (D16).
 
 ## Not verified
 

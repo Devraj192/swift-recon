@@ -6,14 +6,23 @@ rust-version.workspace = true
 license.workspace = true
 
 [dependencies]
+backon.workspace = true
 governor.workspace = true
 hickory-resolver.workspace = true
+reqwest.workspace = true
+scraper.workspace = true
 serde.workspace = true
+serde_json.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
+tokio-rustls.workspace = true
 tracing.workspace = true
+url.workspace = true
+webpki-roots.workspace = true
 swiftrecon-core.workspace = true
 swiftrecon-scope.workspace = true
+x509-parser.workspace = true
+xxhash-rust.workspace = true
 
 [dev-dependencies]
 proptest.workspace = true

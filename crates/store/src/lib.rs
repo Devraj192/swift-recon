@@ -48,6 +48,51 @@ CREATE TABLE IF NOT EXISTS facts (
 CREATE INDEX IF NOT EXISTS idx_facts_scan_kind ON facts(scan_id, kind);
 ";
 
+const MIGRATION_002: &str = "
+CREATE TABLE IF NOT EXISTS ports (
+    scan_id TEXT NOT NULL,
+    host TEXT NOT NULL,
+    ip TEXT NOT NULL,
+    port INTEGER NOT NULL,
+    state TEXT NOT NULL,
+    reason TEXT NOT NULL,
+    latency_ms INTEGER NOT NULL,
+    PRIMARY KEY (scan_id, ip, port)
+);
+CREATE TABLE IF NOT EXISTS http_services (
+    scan_id TEXT NOT NULL,
+    host TEXT NOT NULL,
+    url TEXT NOT NULL,
+    status INTEGER NOT NULL,
+    title TEXT,
+    server TEXT,
+    body_hash INTEGER NOT NULL,
+    time_ms INTEGER NOT NULL,
+    PRIMARY KEY (scan_id, url)
+);
+CREATE TABLE IF NOT EXISTS tls_info (
+    scan_id TEXT NOT NULL,
+    host TEXT NOT NULL,
+    port INTEGER NOT NULL,
+    version TEXT,
+    cipher TEXT,
+    subject TEXT,
+    issuer TEXT,
+    expired INTEGER NOT NULL,
+    self_signed INTEGER NOT NULL,
+    validation_ok INTEGER NOT NULL,
+    PRIMARY KEY (scan_id, host, port)
+);
+CREATE TABLE IF NOT EXISTS technologies (
+    scan_id TEXT NOT NULL,
+    host TEXT NOT NULL,
+    name TEXT NOT NULL,
+    version TEXT,
+    confidence REAL NOT NULL,
+    PRIMARY KEY (scan_id, host, name)
+);
+";
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WorkState {
     Pending,
@@ -166,6 +211,83 @@ impl Store {
         );
     }
 
+    pub fn insert_port(&self, scan_id: &str, host: &str, fact: &swiftrecon_engine::PortFact) {
+        self.send(
+            "INSERT INTO ports (scan_id, host, ip, port, state, reason, latency_ms)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+             ON CONFLICT (scan_id, ip, port) DO UPDATE SET state=excluded.state, reason=excluded.reason",
+            vec![
+                scan_id.to_string(),
+                host.to_string(),
+                fact.ip.to_string(),
+                fact.port.to_string(),
+                fact.state.clone(),
+                fact.reason.clone(),
+                fact.latency_ms.to_string(),
+            ],
+        );
+    }
+
+    pub fn insert_http(&self, scan_id: &str, record: &swiftrecon_net::http::HttpRecord) {
+        self.send(
+            "INSERT INTO http_services (scan_id, host, url, status, title, server, body_hash, time_ms)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+             ON CONFLICT (scan_id, url) DO UPDATE SET status=excluded.status, title=excluded.title",
+            vec![
+                scan_id.to_string(),
+                record.host.clone(),
+                record.final_url.clone(),
+                record.status.to_string(),
+                record.title.clone().unwrap_or_default(),
+                record.server.clone().unwrap_or_default(),
+                record.body_hash.to_string(),
+                record.time_ms.to_string(),
+            ],
+        );
+    }
+
+    pub fn insert_tls(&self, scan_id: &str, record: &swiftrecon_net::tls::TlsRecord) {
+        self.send(
+            "INSERT INTO tls_info (scan_id, host, port, version, cipher, subject, issuer, expired, self_signed, validation_ok)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+             ON CONFLICT (scan_id, host, port) DO UPDATE SET subject=excluded.subject",
+            vec![
+                scan_id.to_string(),
+                record.host.clone(),
+                record.port.to_string(),
+                record.version.clone().unwrap_or_default(),
+                record.cipher.clone().unwrap_or_default(),
+                record.subject.clone().unwrap_or_default(),
+                record.issuer.clone().unwrap_or_default(),
+                (record.expired as u8).to_string(),
+                (record.self_signed as u8).to_string(),
+                (record.validation_ok as u8).to_string(),
+            ],
+        );
+    }
+
+    pub fn insert_tech(
+        &self,
+        scan_id: &str,
+        host: &str,
+        name: &str,
+        version: Option<&str>,
+        confidence: f64,
+    ) {
+        self.send(
+            "INSERT INTO technologies (scan_id, host, name, version, confidence)
+             VALUES (?1, ?2, ?3, ?4, ?5)
+             ON CONFLICT (scan_id, host, name) DO UPDATE SET confidence=excluded.confidence",
+            vec![
+                scan_id.to_string(),
+                host.to_string(),
+                name.to_string(),
+                version.unwrap_or("").to_string(),
+                confidence.to_string(),
+            ],
+        );
+    }
+
     pub fn upsert_work_unit(&self, scan_id: &str, stage: &str, key: &str, state: WorkState) {
         self.send(
             "INSERT INTO work_units (scan_id, stage, key, state, attempts) VALUES (?1, ?2, ?3, ?4, 0)
@@ -206,6 +328,7 @@ pub fn migrate(path: &Path) -> Result<(), StoreError> {
     }
     let conn = Connection::open(path)?;
     conn.execute_batch(MIGRATION_001)?;
+    conn.execute_batch(MIGRATION_002)?;
     info!("store migrated at {}", path.display());
     Ok(())
 }

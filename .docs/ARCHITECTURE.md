@@ -1,4 +1,4 @@
-# SwiftRecon — Architecture (Phase 1)
+# SwiftRecon — Architecture (Phase 3)
 
 ## Pipeline (PRD §4)
 
@@ -16,7 +16,12 @@ crates/discover Source trait, CrtShSource, brute_force + re-validation, detect_w
 crates/engine  Limits, Scheduler (mpsc + Semaphore + governor + backon + CancellationToken), PortProvider stub
 crates/store   migrate (scans, work_units, facts), Store writer thread (sync_channel 1024), insert_fact
 crates/cli     clap derive, mimalloc, tracing-subscriber env-filter to stderr
+crates/report  ScanReport, JSON/CSV/HTML (minijinja, escaped, CSP)
 ```
+
+External (pinned): `sentinelscan-core` git rev `a5deb6f` (Apache-2.0) for port
+probes; dual-guard bridge authorizes only our-approved IPs into its guard.
+Workspace rusqlite unified at 0.31 for the single native link (D20).
 
 Supporting data (not code): `wordlists/mini.txt` (24 names, embedded via
 include_str), `lab/corpus.json` + `crtsh.json` + `bruteforce.json`
@@ -26,9 +31,8 @@ include_str), `lab/corpus.json` + `crtsh.json` + `bruteforce.json`
 
 - Workspace `resolver = "2"`, Rust 1.75+, release `lto=fat, codegen-units=1, strip=true`.
 - `psl` used only for `registrable_domain` helper; scope matching is label-boundary string logic + `ipnet`.
-- `PortProvider::probe` has a default stub body so Phase 1-2 compile without `sentinelscan-core` (PRD open Q5 stays open).
-- Store writer is direct autocommit per op in Phase 1 (correct, not yet batched 500-row transactions — batching lands with real volume in Phase 4).
-- No `crates/net` yet — resolver pool/HTTP client arrive Phase 2-3 per anti-over-engineering rule.
+- `PortProvider` stub replaced by `ports::SentinelPorts` over pinned `sentinelscan-core` (PRD Q5 closed, D3 superseded).
+- Store writer is direct autocommit per op (correct, not yet batched 500-row transactions — batching lands with real volume in Phase 4).
 
 ## Data model (Phase 1 subset of PRD §7)
 

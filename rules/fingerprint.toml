@@ -1,0 +1,60 @@
+[[rule]]
+name = "nginx"
+confidence = 0.7
+
+[rule.signals]
+header_server = ["nginx"]
+html = []
+
+[[rule]]
+name = "apache"
+confidence = 0.7
+
+[rule.signals]
+header_server = ["apache"]
+
+[[rule]]
+name = "express"
+confidence = 0.75
+
+[rule.signals]
+header_powered_by = ["express"]
+cookies = []
+
+[[rule]]
+name = "wordpress"
+confidence = 0.8
+
+[rule.signals]
+meta_generator = ["wordpress"]
+html = ["wp-content", "wp-includes"]
+
+[[rule]]
+name = "react"
+confidence = 0.7
+
+[rule.signals]
+html = ["react-dom", "__REACT", "data-reactroot"]
+
+[[rule]]
+name = "django"
+confidence = 0.7
+
+[rule.signals]
+cookies = ["csrftoken", "sessionid"]
+html = ["csrfmiddlewaretoken"]
+
+[[rule]]
+name = "iis"
+confidence = 0.7
+
+[rule.signals]
+header_server = ["microsoft-iis", "iis/"]
+
+[[rule]]
+name = "cloudflare"
+confidence = 0.6
+
+[rule.signals]
+header_server = ["cloudflare"]
+cookies = ["__cf_bm", "cf_clearance"]

@@ -15,3 +15,8 @@
 - D13: no local fixture DNS server; the 12-host JSON corpus gate stands as Phase 2 accuracy evidence, honestly labeled fixture-based. Live-DNS proof deferred to a real network.
 - D14: CertSpotter, NS/MX/CNAME-derived hosts, reverse DNS, permutations, API-key sources stay parked; next discovery touch lands them as one batch, not a trickle.
 - D15: `.agents/` (112 files, 0.9MB tooling) stays untracked; phase diffs remain code + docs only.
+- D16: HTTP probes use hostname URLs (virtual-host aware, PRD-literal); reqwest hides the peer IP, so socket-level peer-IP pinning is a documented gap.
+- D17: `webpki-roots` named directly (already in graph via reqwest); single crypto provider `ring` (reqwest's choice) after a live-smoke runtime panic with two providers.
+- D18: all response body reads carry explicit 30s timeouts (reqwest timeout excludes streaming); found via a live hang against a stalling proxy.
+- D19: probe stage runs 16-way bounded concurrency (JoinSet + semaphore), outputs re-sorted deterministic; ports already concurrent via sentinel scheduler.
+- D20: workspace rusqlite downgraded 0.32 to 0.31 to unify the native `sqlite3` link with sentinelscan-core; no API impact.
