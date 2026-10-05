@@ -8,3 +8,10 @@
 - SQLite WAL store with single writer; empty scan persists and resumes.
 - CLI: `scan`, `scope check`, `doctor`, `init`; authorized-use warning + `--yes`.
 - Limitations: no discovery/DNS/ports/HTTP yet (Phases 2-4); writer not yet batched; lab metrics not yet measured.
+
+## Phase 1 fixes (bug-hunt pass)
+
+- Sanitize all target-controlled terminal output via `strip_control`.
+- `run_unit` honors cancellation at unit start.
+- `dedup_hostnames` drops empty entries; scope/IP docstrings corrected.
+- Store docs state direct autocommit (batching deferred).

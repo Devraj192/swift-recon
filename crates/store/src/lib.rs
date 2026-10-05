@@ -1,6 +1,8 @@
-//! SQLite storage: single writer actor, batched transactions, WAL mode.
+//! SQLite storage: single writer actor, WAL mode.
 //!
-//! All writes go through one writer task. Modules never write directly.
+//! All writes go through one writer thread. Modules never write directly.
+//! Writes are direct autocommit in Phase 1; batched transactions land with
+//! real volume in a later phase.
 //! Every work unit has persisted state (pending/done/failed) for resume.
 
 use rusqlite::{params, Connection};

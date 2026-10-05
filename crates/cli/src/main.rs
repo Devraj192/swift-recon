@@ -99,7 +99,7 @@ fn load_scope(path: Option<PathBuf>) -> Result<Scope> {
 
 fn confirm_authorized(yes: bool, scope_desc: &str) -> Result<bool> {
     eprintln!("{AUTH_WARNING}");
-    eprintln!("Scope: {scope_desc}");
+    eprintln!("Scope: {}", strip_control(scope_desc));
     if yes {
         return Ok(true);
     }
@@ -127,7 +127,10 @@ async fn cmd_scan(
     let guard = ScopeGuard::new(scope);
     if let Some(t) = &target {
         if !guard.allow_dns(t) {
-            eprintln!("Target {t} is OUT of scope; recorded as referenced, not probed.");
+            eprintln!(
+                "Target {} is OUT of scope; recorded as referenced, not probed.",
+                strip_control(t)
+            );
             return Ok(());
         }
     }
@@ -164,7 +167,7 @@ async fn cmd_scan(
 
 fn cmd_scope_check(value: &str, scope_path: Option<PathBuf>) -> Result<()> {
     let scope = load_scope(scope_path)?;
-    println!("{}", explain(&scope, value));
+    println!("{}", strip_control(&explain(&scope, value)));
     Ok(())
 }
 
@@ -203,5 +206,13 @@ mod tests {
     #[test]
     fn control_chars_stripped_before_terminal() {
         assert_eq!(strip_control("a\x00b\x1bn"), "abn");
+    }
+
+    #[test]
+    fn terminal_paths_never_emit_control_chars() {
+        // Regression: every target-controlled terminal print goes through
+        // strip_control (scope desc, out-of-scope target, explain output).
+        let evil = "evil\x1b[2J\x00.com";
+        assert!(!strip_control(evil).chars().any(|c| c.is_control()));
     }
 }

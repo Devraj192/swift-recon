@@ -93,12 +93,17 @@ impl Scheduler {
     }
 
     /// Run one work unit with global rate limit, concurrency cap, timeout,
-    /// and cancellation. Retries transient failures with jittered backoff.
+    /// and cooperative cancellation (checked at unit start; in-flight work
+    /// is bounded by the op timeout). Retries transient failures with
+    /// jittered backoff.
     pub async fn run_unit<F, Fut>(&self, work: F) -> Result<(), EngineError>
     where
         F: Fn() -> Fut,
         Fut: std::future::Future<Output = Result<(), EngineError>>,
     {
+        if self.is_cancelled() {
+            return Err(EngineError::Shutdown);
+        }
         let permit = self
             .semaphore
             .clone()
@@ -138,8 +143,6 @@ pub enum EngineError {
     Transient(String),
 }
 
-// Async-trait without a new dependency: tiny local shim.
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -163,6 +166,14 @@ mod tests {
         assert!(!sched.is_cancelled());
         sched.shutdown();
         assert!(sched.is_cancelled());
+    }
+
+    #[tokio::test]
+    async fn run_unit_refuses_work_after_shutdown() {
+        let sched = Scheduler::new(Limits::default());
+        sched.shutdown();
+        let out = sched.run_unit(|| async { Ok(()) }).await;
+        assert!(matches!(out, Err(EngineError::Shutdown)));
     }
 
     #[tokio::test]

@@ -243,9 +243,10 @@ impl Scope {
         self.included(&host, None)
     }
 
-    /// IP check for bare-IP input. Strict: only a direct IP/CIDR match
-    /// allows it. Private/loopback/link-local still blocked unless an
-    /// IP/CIDR was explicitly placed in scope.
+    /// IP check for bare-IP input. Strict direct match: only an explicit
+    /// IP/CIDR entry allows it. Hostname entries never match here; resolved
+    /// IPs behind hostname scans go through `connection_allowed`, which
+    /// applies the non-routable re-check.
     pub fn ip_allowed(&self, ip: &IpAddr) -> bool {
         if self.exclude.iter().any(|e| e.matches_ip(ip)) {
             return false;
@@ -356,9 +357,9 @@ pub fn explain(scope: &Scope, value: &str) -> String {
     let value = value.trim().to_lowercase();
     if let Ok(ip) = IpAddr::from_str(&value) {
         if scope.ip_allowed(&ip) {
-            return format!("{value} is IN scope (IP match, non-routable guard passed)");
+            return format!("{value} is IN scope (direct IP/CIDR match)");
         }
-        return format!("{value} is OUT of scope (no IP/CIDR match or non-routable block)");
+        return format!("{value} is OUT of scope (no IP/CIDR match or excluded)");
     }
     if scope.host_allowed(&value) {
         return format!("{value} is IN scope (hostname match)");
@@ -367,11 +368,15 @@ pub fn explain(scope: &Scope, value: &str) -> String {
 }
 
 /// Deduplicate hostnames after normalization (exact sets, never Bloom).
+/// Empty entries are dropped.
 pub fn dedup_hostnames(hosts: &[String]) -> Vec<String> {
     let mut seen = HashSet::new();
     let mut out = Vec::new();
     for h in hosts {
         let key = h.trim().to_lowercase();
+        if key.is_empty() {
+            continue;
+        }
         if seen.insert(key.clone()) {
             out.push(key);
         }
@@ -424,6 +429,16 @@ mod tests {
         let outside: IpAddr = "203.0.113.200".parse().unwrap();
         assert!(scope.ip_allowed(&inside));
         assert!(!scope.ip_allowed(&outside));
+    }
+
+    #[test]
+    fn dedup_drops_empty_entries() {
+        let out = dedup_hostnames(&[
+            "a.example.com".to_string(),
+            "".to_string(),
+            "  ".to_string(),
+        ]);
+        assert_eq!(out, vec!["a.example.com".to_string()]);
     }
 
     #[test]
