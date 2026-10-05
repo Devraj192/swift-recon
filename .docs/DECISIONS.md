@@ -29,3 +29,5 @@
 - D27: `Store` Drop joins the writer (flush guarantee for history); worker only reads the channel so no deadlock.
 - D28: no root README/SECURITY despite release conventions — standing docs rule wins; release notes live in CHANGELOG + GitHub release text.
 - D29: clap_complete 4 (v5 does not exist); dist-generated CI replaces hand-written workflow.
+- D30: root README/CONTRIBUTING/SECURITY added on explicit request, overriding D28; `.gitignore` keeps `/*.md` ignored with exceptions for exactly these three. All other docs stay in `.docs/`.
+- D31: workspace license MIT → Apache-2.0 with root LICENSE (canonical text, appendix: Copyright 2026 Devraj — correct the name if wrong); CONTRIBUTING.md chosen over CONTRIBUTION.md (GitHub-recognized name).

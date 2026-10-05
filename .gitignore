@@ -9,7 +9,11 @@ scans/
 *.jsonl
 # Root-level documents stay out of git: all documents live in .docs/
 # (project rule: write docs only in .docs/)
+# Exceptions (D30): release-facing files required at the repository root.
 /*.md
+!README.md
+!CONTRIBUTING.md
+!SECURITY.md
 /docs/
 # Editor / OS noise
 .vscode/
