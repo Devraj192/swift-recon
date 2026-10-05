@@ -1,4 +1,4 @@
-# SwiftRecon — Architecture (Phase 4)
+# SwiftRecon — Architecture (Phase 5)
 
 ## Pipeline (PRD §4)
 
@@ -6,7 +6,7 @@ Scope → Discovery → DNS → Ports → HTTP/TLS → Fingerprint → Crawler �
 Typed events over bounded channels; slow stages apply backpressure.
 Single SQLite writer; scheduler owns limits, retries, timeouts, cancellation.
 
-## Phase 1 crates
+## Crates
 
 ```
 crates/core    Fact/Evidence/Confidence/Event, thiserror
@@ -18,6 +18,7 @@ crates/store   migrate (scans, work_units, facts), Store writer thread (sync_cha
 crates/cli     clap derive, mimalloc, tracing-subscriber env-filter to stderr
 crates/report  ScanReport, JSON/CSV/HTML (minijinja, escaped, CSP)
 crates/web     url (canonicalize/template/params), crawl (polite, trap-safe, resume-exact), js (oxc AST + regex), openapi (spec/wayback/robots)
+crates/engine  + graph (petgraph entity graph, queries, DOT/Mermaid/JSON)
 ```
 
 External (pinned): `sentinelscan-core` git rev `a5deb6f` (Apache-2.0) for port

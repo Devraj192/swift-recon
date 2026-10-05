@@ -8,11 +8,14 @@ license.workspace = true
 [dependencies]
 backon.workspace = true
 governor.workspace = true
+petgraph.workspace = true
 sentinelscan-core.workspace = true
 serde.workspace = true
+serde_json.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 tokio-util.workspace = true
 tracing.workspace = true
 swiftrecon-core.workspace = true
 swiftrecon-scope.workspace = true
+url.workspace = true

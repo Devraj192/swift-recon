@@ -5,7 +5,14 @@ Docs live only in `.docs/` — root `*.md` is gitignored by project rule.
 
 ## Current phase
 
-Phase 4 crawl/JS/endpoints (PRD §11). Work only on this phase. One commit per phase.
+Phase 5 correlation/history/TUI/release (PRD §11). Work only on this phase. One commit per phase.
+
+## What exists (Phase 5 adds)
+
+- `crates/engine/graph`: petgraph entity graph, shared-IP groups, tech/param queries, JSON/DOT/Mermaid.
+- Store reads (`list_scans`, `get_*`) + Drop-join flush; migration 004 (full HTTP columns, TEXT hashes).
+- CLI: `history/show/compare/explain/graph/export/completions/tui`, global `--db`.
+- `crates/cli/src/tui.rs`: read-only ratatui browser; `benches/scan.rs` (criterion); cargo-dist release.
 
 ## What exists (Phase 4 adds)
 

@@ -45,9 +45,11 @@ impl Default for Limits {
 // ---------------------------------------------------------------------------
 
 pub mod adaptive;
+pub mod graph;
 pub mod ports;
 
 pub use adaptive::AdaptiveLimiter;
+pub use graph::{build as build_graph, Graph};
 
 pub use ports::{dedup_ips, parse_ports, PortFact, SentinelPorts, WEB_PORTS};
 

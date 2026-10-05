@@ -24,3 +24,8 @@
 - D22: crawler fetches real paths via `probe_url` (Phase 3 `probe` always hit `/`); caught by the kill-resume hit map, not review.
 - D23: `run_crawl_stage` takes context/output structs instead of 11 args (no `#[allow]` per rules).
 - D24: new endpoint hosts feed back into subdomains as `endpoint-analysis` facts (deduped against known).
+- D25: shared row types live in `core` (engine→store dep would cycle; found at resolve time).
+- D26: u64 hashes stored with TEXT affinity after SQLite coerced one through REAL (round-trip test caught it).
+- D27: `Store` Drop joins the writer (flush guarantee for history); worker only reads the channel so no deadlock.
+- D28: no root README/SECURITY despite release conventions — standing docs rule wins; release notes live in CHANGELOG + GitHub release text.
+- D29: clap_complete 4 (v5 does not exist); dist-generated CI replaces hand-written workflow.

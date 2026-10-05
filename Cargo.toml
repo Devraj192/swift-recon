@@ -21,11 +21,15 @@ license = "MIT"
 anyhow = "1"
 backon = "1"
 clap = { version = "4", features = ["derive"] }
+clap_complete = "4"
+criterion = "0.5"
+crossterm = "0.28"
 governor = "0.10"
 hickory-resolver = "0.25"
 ipnet = "2"
 mimalloc = "0.1"
 minijinja = "2"
+petgraph = "0.8"
 oxc_allocator = "0.153"
 oxc_ast = "0.153"
 oxc_ast_visit = "0.153"
@@ -45,6 +49,7 @@ x509-parser = "0.17"
 xxhash-rust = { version = "0.8", features = ["xxh3"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+ratatui = "0.29"
 tempfile = "3"
 thiserror = "2"
 tokio = { version = "1", features = ["full"] }
@@ -68,3 +73,11 @@ swiftrecon-store = { path = "crates/store" }
 lto = "fat"
 codegen-units = 1
 strip = true
+
+[workspace.metadata.dist]
+cargo-dist-version = "0.32.0"
+installers = ["shell", "powershell"]
+targets = ["x86_64-unknown-linux-gnu", "x86_64-pc-windows-msvc"]
+ci = "github"
+unix-archive = ".tar.gz"
+windows-archive = ".zip"

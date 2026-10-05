@@ -147,6 +147,50 @@ pub enum CoreError {
     InvalidConfidence(f64),
 }
 
+/// Stored-row read models shared by store, graph, and CLI (history,
+///
+/// compare, explain). Plain data, no DB code.
+#[derive(Debug, Clone)]
+pub struct StoredScan {
+    pub id: String,
+    pub status: String,
+    pub scope_json: String,
+    pub started: i64,
+    pub finished: Option<i64>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct StoredPort {
+    pub host: String,
+    pub ip: String,
+    pub port: i64,
+    pub state: String,
+    pub reason: String,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct StoredEndpoint {
+    pub template: String,
+    pub methods: Vec<String>,
+    pub sources: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct StoredParam {
+    pub endpoint: String,
+    pub name: String,
+    pub location: String,
+    pub method: String,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct StoredTech {
+    pub host: String,
+    pub name: String,
+    pub version: String,
+    pub confidence: f64,
+}
+
 pub fn now_unix() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)

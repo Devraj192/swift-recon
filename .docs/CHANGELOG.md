@@ -1,6 +1,12 @@
 # SwiftRecon — Changelog
 
-## Phase 4 — Crawl, JS, endpoints, parameters (pending commit)
+## Phase 5 — Correlation, history, TUI, release (pending commit)
+
+- Entity graph in `engine` (petgraph): deduped nodes, shared-IP grouping, `hosts_running` / `endpoints_with_param` queries, JSON/DOT/Mermaid exports (escaped).
+- CLI: `history`, `show`, `compare`, `explain`, `graph`, `export`, `completions`, `tui`, global `--db`. Store reads + Drop-join flush so history never misses a finished scan.
+- Store migration 004 (full HTTP columns; u64 hashes use TEXT affinity after a REAL-coercion round-trip bug).
+- ratatui scan browser (read-only); criterion benches recorded; cargo-dist 0.32.0 release (shell+ps1, win zip + linux tarball) with dist-generated CI.
+- Limitations: TUI not interactively driven here; installer execution happens on CI; no root README/SECURITY by standing docs rule (D28).
 
 - New `crates/web`: canonicalize (idempotent, proptested) + `{id}` templating + param extraction; polite crawler (depth/caps/trap-collapse/robots-parse-only) with resume-exact completed set; oxc AST JS analysis with regex fallback (secrets store kinds only); OpenAPI/Wayback/robots/sitemap sources.
 - Engine `AdaptiveLimiter` (AIMD) wired into crawl; store migration 003 (urls, js_files, endpoints, parameters, findings); report gains endpoint/parameter sections.

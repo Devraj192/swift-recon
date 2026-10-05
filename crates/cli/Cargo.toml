@@ -4,6 +4,7 @@ version = "0.1.0"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
+repository = "https://github.com/Devraj192/swift-recon"
 
 [[bin]]
 name = "swiftrecon"
@@ -12,6 +13,9 @@ path = "src/main.rs"
 [dependencies]
 anyhow.workspace = true
 clap.workspace = true
+clap_complete.workspace = true
+crossterm.workspace = true
+ratatui.workspace = true
 scraper.workspace = true
 serde_json.workspace = true
 url.workspace = true
@@ -29,3 +33,11 @@ swiftrecon-report.workspace = true
 swiftrecon-engine.workspace = true
 swiftrecon-store.workspace = true
 mimalloc.workspace = true
+
+[dev-dependencies]
+criterion.workspace = true
+tempfile.workspace = true
+
+[[bench]]
+name = "scan"
+harness = false

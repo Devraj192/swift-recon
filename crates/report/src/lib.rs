@@ -5,6 +5,7 @@
 use minijinja::{context, Environment};
 use serde::{Deserialize, Serialize};
 use swiftrecon_net::http::HttpRecord;
+use swiftrecon_net::tls::TlsRecord;
 use thiserror::Error;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -48,6 +49,7 @@ pub struct ScanReport {
     pub subdomains: Vec<String>,
     pub ports: Vec<PortRow>,
     pub http: Vec<HttpRecord>,
+    pub tls: Vec<TlsRecord>,
     pub technologies: Vec<TechRow>,
     pub endpoints: Vec<EndpointRow>,
     pub parameters: Vec<ParamRow>,
@@ -113,6 +115,9 @@ const HTML_TEMPLATE: &str = r#"<!DOCTYPE html>
 <h2>Technologies</h2>
 <table><tr><th>Host</th><th>Name</th><th>Version</th><th>Confidence</th></tr>
 {% for tech in technologies %}<tr><td>{{ tech.host }}</td><td>{{ tech.name }}</td><td>{{ tech.version }}</td><td>{{ tech.confidence }}</td></tr>{% endfor %}</table>
+<h2>TLS</h2>
+<table><tr><th>Host</th><th>Port</th><th>Version</th><th>Subject</th><th>Expired</th></tr>
+{% for record in tls %}<tr><td>{{ record.host }}</td><td>{{ record.port }}</td><td>{{ record.version }}</td><td>{{ record.subject }}</td><td>{{ record.expired }}</td></tr>{% endfor %}</table>
 <h2>Endpoints</h2>
 <table><tr><th>Template</th><th>Methods</th><th>Sources</th></tr>
 {% for endpoint in endpoints %}<tr><td>{{ endpoint.template }}</td><td>{{ endpoint.methods|join(", ") }}</td><td>{{ endpoint.sources|join(", ") }}</td></tr>{% endfor %}</table>
@@ -139,6 +144,7 @@ pub fn to_html(report: &ScanReport) -> Result<String, ReportError> {
             subdomains => report.subdomains,
             ports => report.ports,
             technologies => report.technologies,
+            tls => report.tls,
             endpoints => report.endpoints,
             parameters => report.parameters,
             open_count => open_count,
@@ -170,6 +176,7 @@ mod tests {
                 latency_ms: 3,
             }],
             http: Vec::new(),
+            tls: Vec::new(),
             technologies: vec![TechRow {
                 host: "a.example.com".to_string(),
                 name: "nginx".to_string(),

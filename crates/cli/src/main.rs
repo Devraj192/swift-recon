@@ -9,6 +9,8 @@ use swiftrecon_scope::{explain, parse_scope_file, Scope, ScopeGuard};
 use swiftrecon_store::Store;
 use tracing_subscriber::EnvFilter;
 
+mod tui;
+
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
@@ -22,6 +24,9 @@ const AUTH_WARNING: &str =
     about = "Fast, scope-safe web reconnaissance engine"
 )]
 struct Cli {
+    /// SQLite database file (default: swiftrecon.db in the working directory).
+    #[arg(long, global = true, default_value = "swiftrecon.db")]
+    db: PathBuf,
     #[command(subcommand)]
     command: Command,
 }
@@ -55,6 +60,34 @@ enum Command {
     },
     /// Check toolchain, config, and storage.
     Doctor,
+    /// List stored scans (newest first).
+    History,
+    /// Show one scan: counts plus every fact with sources.
+    Show { scan_id: String },
+    /// Diff two scans: added, removed, and changed facts.
+    Compare { scan_a: String, scan_b: String },
+    /// Explain one fact: evidence, sources, confidence.
+    Explain { fact_id: String },
+    /// Correlated entity graph of one scan.
+    Graph {
+        scan_id: String,
+        /// Export format: terminal, json, dot, or mermaid.
+        #[arg(long, default_value = "terminal")]
+        format: String,
+    },
+    /// Re-render a stored scan as json, csv, or html.
+    Export {
+        scan_id: String,
+        #[arg(long, default_value = "json")]
+        format: String,
+    },
+    /// Shell completions.
+    Completions {
+        #[arg(value_enum)]
+        shell: clap_complete::Shell,
+    },
+    /// Full-screen scan browser.
+    Tui,
     /// Write an example scope.toml.
     Init {
         #[arg(long, default_value = "scope.toml")]
@@ -80,6 +113,7 @@ async fn main() -> Result<()> {
         .init();
 
     let cli = Cli::parse();
+    let db_path = cli.db.clone();
     match cli.command {
         Command::Scan {
             target,
@@ -89,11 +123,31 @@ async fn main() -> Result<()> {
             passive,
             output,
             ports,
-        } => cmd_scan(target, scope, resume, yes, passive, &output, &ports).await,
+        } => {
+            cmd_scan(ScanArgs {
+                target,
+                scope_path: scope,
+                resume,
+                yes,
+                passive,
+                output: &output,
+                ports_spec: &ports,
+                db_path: &db_path,
+            })
+            .await
+        }
         Command::Scope { action } => match action {
             ScopeAction::Check { value, scope } => cmd_scope_check(&value, scope),
         },
         Command::Doctor => cmd_doctor(),
+        Command::History => cmd_history(&db_path),
+        Command::Show { scan_id } => cmd_show(&db_path, &scan_id),
+        Command::Compare { scan_a, scan_b } => cmd_compare(&db_path, &scan_a, &scan_b),
+        Command::Explain { fact_id } => cmd_explain(&db_path, &fact_id),
+        Command::Graph { scan_id, format } => cmd_graph(&db_path, &scan_id, &format),
+        Command::Export { scan_id, format } => cmd_export(&db_path, &scan_id, &format),
+        Command::Completions { shell } => cmd_completions(shell),
+        Command::Tui => cmd_tui(&db_path),
         Command::Init { output } => cmd_init(&output),
     }
 }
@@ -122,15 +176,29 @@ fn confirm_authorized(yes: bool, scope_desc: &str) -> Result<bool> {
     Ok(line.trim().eq_ignore_ascii_case("y"))
 }
 
-async fn cmd_scan(
+/// Scan invocation options (keeps arg counts within limits).
+struct ScanArgs<'a> {
     target: Option<String>,
     scope_path: Option<PathBuf>,
     resume: Option<String>,
     yes: bool,
     passive: bool,
-    output: &str,
-    ports_spec: &str,
-) -> Result<()> {
+    output: &'a str,
+    ports_spec: &'a str,
+    db_path: &'a std::path::Path,
+}
+
+async fn cmd_scan(args: ScanArgs<'_>) -> Result<()> {
+    let ScanArgs {
+        target,
+        scope_path,
+        resume,
+        yes,
+        passive,
+        output,
+        ports_spec,
+        db_path,
+    } = args;
     if !["terminal", "jsonl", "json", "csv", "html"].contains(&output) {
         anyhow::bail!("unknown output format: {output} (expected terminal|jsonl|json|csv|html)");
     }
@@ -153,8 +221,7 @@ async fn cmd_scan(
         }
     }
 
-    let db_path = PathBuf::from("swiftrecon.db");
-    let store = Store::open(&db_path)?;
+    let store = Store::open(db_path)?;
     let scan_id = resume.unwrap_or_else(|| format!("scan-{}", swiftrecon_core::now_unix()));
     store.create_scan(&scan_id, &desc, swiftrecon_core::now_unix());
     store.upsert_work_unit(
@@ -281,6 +348,7 @@ async fn run_pipeline(
     let mut port_rows: Vec<swiftrecon_report::PortRow> = Vec::new();
     let mut http_records: Vec<swiftrecon_net::http::HttpRecord> = Vec::new();
     let mut tech_rows: Vec<swiftrecon_report::TechRow> = Vec::new();
+    let mut tls_rows: Vec<swiftrecon_net::tls::TlsRecord> = Vec::new();
     let mut san_hosts: Vec<(String, f64, Vec<String>)> = Vec::new();
     let mut endpoint_rows: Vec<swiftrecon_report::EndpointRow> = Vec::new();
     let mut param_rows: Vec<swiftrecon_report::ParamRow> = Vec::new();
@@ -447,6 +515,7 @@ async fn run_pipeline(
                 for san in &tls_record.sans {
                     san_hosts.push((san.clone(), 0.7, vec!["tls-san".to_string()]));
                 }
+                tls_rows.push(tls_record);
             }
             http_records.push(record);
         }
@@ -540,6 +609,7 @@ async fn run_pipeline(
         ports: port_rows,
         http: http_records,
         technologies: tech_rows,
+        tls: tls_rows,
         endpoints: endpoint_rows,
         parameters: param_rows,
     };
@@ -1018,7 +1088,7 @@ fn cmd_doctor() -> Result<()> {
     Ok(())
 }
 
-fn cmd_init(output: &PathBuf) -> Result<()> {
+fn cmd_init(output: &std::path::Path) -> Result<()> {
     let example = r#"[scope]
 include = ["*.example.com"]
 exclude = []
@@ -1035,6 +1105,279 @@ scan_deadline_secs = 3600
     std::fs::write(output, example)?;
     eprintln!("wrote {}", output.display());
     Ok(())
+}
+
+fn cmd_history(db: &std::path::Path) -> Result<()> {
+    let store = Store::open(db)?;
+    println!("SCAN_ID STATUS FACTS");
+    for scan in store.list_scans()? {
+        let facts = store.get_facts(&scan.id).unwrap_or_default().len();
+        println!("{} {} {}", scan.id, scan.status, facts);
+    }
+    Ok(())
+}
+
+fn cmd_show(db: &std::path::Path, scan_id: &str) -> Result<()> {
+    let store = Store::open(db)?;
+    let facts = store.get_facts(scan_id)?;
+    let ports = store.get_ports(scan_id).unwrap_or_default();
+    let open = ports.iter().filter(|p| p.state == "open").count();
+    let techs = store.get_techs(scan_id).unwrap_or_default();
+    println!("scan: {scan_id}");
+    println!("facts: {}", facts.len());
+    println!("open ports: {open}");
+    for tech in &techs {
+        println!("tech: {} {} ({})", tech.host, tech.name, tech.confidence);
+    }
+    for fact in &facts {
+        println!(
+            "[{}] {} <- {}",
+            fact.kind,
+            strip_control(&fact.value),
+            fact.sources.join(",")
+        );
+    }
+    Ok(())
+}
+
+fn cmd_compare(db: &std::path::Path, scan_a: &str, scan_b: &str) -> Result<()> {
+    use std::collections::HashMap;
+    let store = Store::open(db)?;
+    let key = |fact: &swiftrecon_core::Fact| format!("{}:{}", fact.kind, fact.value);
+    let facts_a = store.get_facts(scan_a)?;
+    let facts_b = store.get_facts(scan_b)?;
+    let map_a: HashMap<String, &swiftrecon_core::Fact> =
+        facts_a.iter().map(|f| (key(f), f)).collect();
+    let map_b: HashMap<String, &swiftrecon_core::Fact> =
+        facts_b.iter().map(|f| (key(f), f)).collect();
+    let mut added: Vec<&String> = Vec::new();
+    let mut removed: Vec<&String> = Vec::new();
+    let mut changed: Vec<&String> = Vec::new();
+    for k in map_b.keys() {
+        match (map_a.get(k), map_b.get(k)) {
+            (None, Some(_)) => added.push(k),
+            (Some(a), Some(b)) if a.confidence != b.confidence || a.sources != b.sources => {
+                changed.push(k)
+            }
+            _ => {}
+        }
+    }
+    for k in map_a.keys() {
+        if !map_b.contains_key(k) {
+            removed.push(k);
+        }
+    }
+    added.sort();
+    removed.sort();
+    changed.sort();
+    println!("added ({})", added.len());
+    for k in &added {
+        println!("+ {k}");
+    }
+    println!("removed ({})", removed.len());
+    for k in &removed {
+        println!("- {k}");
+    }
+    println!("changed ({})", changed.len());
+    for k in &changed {
+        println!("~ {k}");
+    }
+    Ok(())
+}
+
+fn cmd_explain(db: &std::path::Path, fact_id: &str) -> Result<()> {
+    let store = Store::open(db)?;
+    for scan in store.list_scans()? {
+        for fact in store.get_facts(&scan.id).unwrap_or_default() {
+            if fact.id == fact_id {
+                println!("fact: {}", fact.id);
+                println!("kind: {} value: {}", fact.kind, strip_control(&fact.value));
+                println!("confidence: {}", fact.confidence.value());
+                println!("sources: {}", fact.sources.join(", "));
+                println!("observed:");
+                for item in fact
+                    .evidence
+                    .iter()
+                    .filter(|e| e.kind == swiftrecon_core::ObservationKind::Observed)
+                {
+                    println!(
+                        "  {} {} = {}",
+                        item.evidence_type,
+                        item.key,
+                        strip_control(&item.value)
+                    );
+                }
+                println!("inferred:");
+                for item in fact
+                    .evidence
+                    .iter()
+                    .filter(|e| e.kind == swiftrecon_core::ObservationKind::Inferred)
+                {
+                    println!(
+                        "  {} {} = {}",
+                        item.evidence_type,
+                        item.key,
+                        strip_control(&item.value)
+                    );
+                }
+                return Ok(());
+            }
+        }
+    }
+    anyhow::bail!("fact not found: {fact_id}");
+}
+
+fn scan_graph(store: &Store, scan_id: &str) -> Result<swiftrecon_engine::Graph> {
+    use swiftrecon_engine::graph::ScanData;
+    let facts = store.get_facts(scan_id)?;
+    let subdomains: Vec<String> = facts
+        .iter()
+        .filter(|f| f.kind == "subdomain")
+        .map(|f| f.value.clone())
+        .collect();
+    let ports = store.get_ports(scan_id).unwrap_or_default();
+    let endpoints = store.get_endpoints(scan_id).unwrap_or_default();
+    let params = store.get_params(scan_id).unwrap_or_default();
+    let techs = store
+        .get_techs(scan_id)
+        .unwrap_or_default()
+        .into_iter()
+        .map(|tech| (tech.host.clone(), tech))
+        .collect();
+    Ok(swiftrecon_engine::graph::build(&ScanData {
+        subdomains,
+        ports,
+        endpoints,
+        params,
+        techs,
+    }))
+}
+
+fn cmd_graph(db: &std::path::Path, scan_id: &str, format: &str) -> Result<()> {
+    let store = Store::open(db)?;
+    let graph = scan_graph(&store, scan_id)?;
+    match format {
+        "json" => println!(
+            "{}",
+            serde_json::to_string_pretty(&graph.to_json()).unwrap_or_else(|_| "{}".to_string())
+        ),
+        "dot" => print!("{}", graph.to_dot()),
+        "mermaid" => print!("{}", graph.to_mermaid()),
+        "terminal" => {
+            println!(
+                "nodes: {} edges: {}",
+                graph.node_count(),
+                graph.edge_count()
+            );
+            for group in graph.shared_infrastructure() {
+                println!("shared: {}", group.join(", "));
+            }
+        }
+        _ => anyhow::bail!("unknown graph format: {format} (expected terminal|json|dot|mermaid)"),
+    }
+    Ok(())
+}
+
+fn cmd_export(db: &std::path::Path, scan_id: &str, format: &str) -> Result<()> {
+    let store = Store::open(db)?;
+    let facts = store.get_facts(scan_id)?;
+    let subdomains: Vec<String> = facts
+        .iter()
+        .filter(|f| f.kind == "subdomain")
+        .map(|f| f.value.clone())
+        .collect();
+    let ports: Vec<swiftrecon_report::PortRow> = store
+        .get_ports(scan_id)
+        .unwrap_or_default()
+        .into_iter()
+        .map(|p| swiftrecon_report::PortRow {
+            host: p.host,
+            ip: p.ip,
+            port: p.port.max(0) as u16,
+            state: p.state,
+            reason: p.reason,
+            latency_ms: 0,
+        })
+        .collect();
+    let http = store.get_http(scan_id).unwrap_or_default();
+    let technologies: Vec<swiftrecon_report::TechRow> = store
+        .get_techs(scan_id)
+        .unwrap_or_default()
+        .into_iter()
+        .map(|t| swiftrecon_report::TechRow {
+            host: t.host,
+            name: t.name,
+            version: if t.version.is_empty() {
+                None
+            } else {
+                Some(t.version)
+            },
+            confidence: t.confidence,
+            evidence_count: 0,
+        })
+        .collect();
+    let endpoints: Vec<swiftrecon_report::EndpointRow> = store
+        .get_endpoints(scan_id)
+        .unwrap_or_default()
+        .into_iter()
+        .map(|e| swiftrecon_report::EndpointRow {
+            template: e.template,
+            methods: e.methods,
+            sources: e.sources,
+        })
+        .collect();
+    let parameters: Vec<swiftrecon_report::ParamRow> = store
+        .get_params(scan_id)
+        .unwrap_or_default()
+        .into_iter()
+        .map(|p| swiftrecon_report::ParamRow {
+            endpoint: p.endpoint,
+            name: p.name,
+            location: p.location,
+            method: p.method,
+        })
+        .collect();
+    let targets: Vec<String> = store
+        .list_scans()?
+        .into_iter()
+        .find(|s| s.id == scan_id)
+        .map(|s| vec![s.scope_json])
+        .unwrap_or_default();
+    let report = swiftrecon_report::ScanReport {
+        scan_id: scan_id.to_string(),
+        targets,
+        subdomains,
+        ports,
+        http,
+        tls: Vec::new(),
+        technologies,
+        endpoints,
+        parameters,
+    };
+    match format {
+        "json" => println!(
+            "{}",
+            swiftrecon_report::to_json(&report).unwrap_or_else(|_| "{}".to_string())
+        ),
+        "csv" => print!("{}", swiftrecon_report::ports_csv(&report)),
+        "html" => println!(
+            "{}",
+            swiftrecon_report::to_html(&report).unwrap_or_else(|_| "".to_string())
+        ),
+        _ => anyhow::bail!("unknown export format: {format} (expected json|csv|html)"),
+    }
+    Ok(())
+}
+
+fn cmd_completions(shell: clap_complete::Shell) -> Result<()> {
+    use clap::CommandFactory;
+    let mut command = Cli::command();
+    clap_complete::generate(shell, &mut command, "swiftrecon", &mut io::stdout());
+    Ok(())
+}
+
+fn cmd_tui(db: &std::path::Path) -> Result<()> {
+    tui::run(db)
 }
 
 fn strip_control(s: &str) -> String {
