@@ -11,10 +11,16 @@ Single SQLite writer; scheduler owns limits, retries, timeouts, cancellation.
 ```
 crates/core    Fact/Evidence/Confidence/Event, thiserror
 crates/scope   ScopeFile TOML, ScopeEntry (domain/wildcard/ip/cidr), Scope, ScopeGuard
+crates/net     DnsOutcome (distinct), DnsCache (TTL), ResolverPool (round-robin + governor + health skip)
+crates/discover Source trait, CrtShSource, brute_force + re-validation, detect_wildcard/filter_wildcard, merge_sources
 crates/engine  Limits, Scheduler (mpsc + Semaphore + governor + backon + CancellationToken), PortProvider stub
-crates/store   migrate (scans, work_units, facts), Store writer thread (sync_channel 1024)
+crates/store   migrate (scans, work_units, facts), Store writer thread (sync_channel 1024), insert_fact
 crates/cli     clap derive, mimalloc, tracing-subscriber env-filter to stderr
 ```
+
+Supporting data (not code): `wordlists/mini.txt` (24 names, embedded via
+include_str), `lab/corpus.json` + `crtsh.json` + `bruteforce.json`
+(12-host accuracy fixture with scripted answers, wildcard set).
 
 ## Key decisions
 

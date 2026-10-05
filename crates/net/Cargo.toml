@@ -1,0 +1,19 @@
+[package]
+name = "swiftrecon-net"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+governor.workspace = true
+hickory-resolver.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+swiftrecon-core.workspace = true
+swiftrecon-scope.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true

@@ -28,7 +28,7 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Command {
-    /// Run a scan (Phase 1: persists an empty scan for resume).
+    /// Run a scan (Phase 2: subdomain discovery; empty scan when no target).
     Scan {
         /// Target domain or scope file entry.
         target: Option<String>,
@@ -38,6 +38,12 @@ enum Command {
         resume: Option<String>,
         #[arg(long, default_value_t = false)]
         yes: bool,
+        /// Passive mode: third-party sources only, no packets to the target.
+        #[arg(long, default_value_t = false)]
+        passive: bool,
+        /// Output format: terminal summary or JSONL facts on stdout.
+        #[arg(long, default_value = "terminal")]
+        output: String,
     },
     /// Scope helpers.
     Scope {
@@ -77,7 +83,9 @@ async fn main() -> Result<()> {
             scope,
             resume,
             yes,
-        } => cmd_scan(target, scope, resume, yes).await,
+            passive,
+            output,
+        } => cmd_scan(target, scope, resume, yes, passive, &output).await,
         Command::Scope { action } => match action {
             ScopeAction::Check { value, scope } => cmd_scope_check(&value, scope),
         },
@@ -115,7 +123,12 @@ async fn cmd_scan(
     scope_path: Option<PathBuf>,
     resume: Option<String>,
     yes: bool,
+    passive: bool,
+    output: &str,
 ) -> Result<()> {
+    if output != "terminal" && output != "jsonl" {
+        anyhow::bail!("unknown output format: {output} (expected terminal|jsonl)");
+    }
     let scope = load_scope(scope_path)?;
     let desc = target.clone().unwrap_or_else(|| "scope file".to_string());
     if !confirm_authorized(yes, &desc)? {
@@ -156,12 +169,110 @@ async fn cmd_scan(
     }
     let _ = sched.run_unit(|| async { Ok(()) }).await;
 
+    if let Some(t) = &target {
+        run_discovery(&scan_id, t, &guard, &store, passive, output).await?;
+    }
+
     store.upsert_work_unit(&scan_id, "scan", &desc, swiftrecon_store::WorkState::Done);
     store.finish_scan(&scan_id, swiftrecon_core::now_unix());
-    println!(
-        "{{\"scan_id\": \"{}\", \"status\": \"done\"}}",
-        strip_control(&scan_id)
-    );
+    eprintln!("scan {} done", strip_control(&scan_id));
+    Ok(())
+}
+
+/// Phase 2 discovery: passive sources always; brute-force unless `--passive`.
+/// Facts stream as JSONL on stdout; the summary goes to stderr so stdout
+/// stays pure data.
+async fn run_discovery(
+    scan_id: &str,
+    target: &str,
+    guard: &ScopeGuard,
+    store: &Store,
+    passive: bool,
+    output: &str,
+) -> Result<()> {
+    use swiftrecon_core::{Confidence, Evidence, Fact};
+    use swiftrecon_discover::{
+        brute_force, detect_wildcard, merge_sources, mini_wordlist, CrtShSource, Source,
+    };
+
+    let domain = swiftrecon_scope::registrable_domain(target)
+        .unwrap_or_else(|| target.trim().to_lowercase());
+    let pool = swiftrecon_net::ResolverPool::new(4, 50);
+
+    let crtsh = CrtShSource::new().map_err(anyhow::Error::from)?;
+    let crt_hosts = match crtsh.collect(domain.clone()).await {
+        Ok(hosts) => {
+            store.upsert_work_unit(
+                scan_id,
+                "discover",
+                "crtsh",
+                swiftrecon_store::WorkState::Done,
+            );
+            hosts
+        }
+        Err(e) => {
+            tracing::warn!("source {} failed: {e}", crtsh.name());
+            eprintln!("source {} failed ({e}); continuing", crtsh.name());
+            store.upsert_work_unit(
+                scan_id,
+                "discover",
+                "crtsh",
+                swiftrecon_store::WorkState::Failed,
+            );
+            Vec::new()
+        }
+    };
+
+    let mut active_hosts: Vec<String> = Vec::new();
+    if !passive {
+        let wildcard = detect_wildcard(&pool, guard, &domain).await;
+        if wildcard.is_some() {
+            eprintln!("wildcard DNS detected for {domain}; filtering matches");
+        }
+        let words = mini_wordlist();
+        let found = brute_force(&pool, guard, &domain, &words, wildcard.as_ref()).await;
+        store.upsert_work_unit(
+            scan_id,
+            "discover",
+            "bruteforce",
+            swiftrecon_store::WorkState::Done,
+        );
+        active_hosts = found.into_iter().map(|h| h.hostname).collect();
+    }
+
+    let merged = merge_sources(vec![
+        ("crtsh".to_string(), crt_hosts),
+        ("bruteforce".to_string(), active_hosts),
+    ]);
+    // Keep only names still in scope (sources can return siblings).
+    let merged: Vec<_> = merged
+        .into_iter()
+        .filter(|h| guard.allow_dns(&h.hostname))
+        .collect();
+
+    let mut count = 0;
+    for host in &merged {
+        let fact = Fact::new(
+            scan_id,
+            "subdomain",
+            &host.hostname,
+            host.sources.clone(),
+            host.sources
+                .iter()
+                .map(|s| Evidence::observed("discovery", "source", s))
+                .collect(),
+            Confidence::new(host.confidence).unwrap_or(Confidence(0.6)),
+        );
+        store.insert_fact(&fact);
+        if output == "jsonl" {
+            println!(
+                "{}",
+                serde_json::to_string(&fact).unwrap_or_else(|_| "{}".to_string())
+            );
+        }
+        count += 1;
+    }
+    eprintln!("discovered {count} subdomains for {domain} (passive={passive})");
     Ok(())
 }
 

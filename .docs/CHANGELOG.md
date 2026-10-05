@@ -1,6 +1,14 @@
 # SwiftRecon — Changelog
 
-## Phase 1 — Foundation (unreleased, pending commit)
+## Phase 2 — DNS + subdomain discovery (pending commit)
+
+- New `crates/net`: resolver pool (google, per-resolver rate limit, health skip), TTL cache, distinct NXDOMAIN/SERVFAIL/timeout/refused outcomes, scope-gated queries.
+- New `crates/discover`: `Source` trait, crt.sh passive source, mini wordlist brute-force with re-validation, wildcard detect + filter, provenance merge with agreement boost.
+- CLI: `scan --passive`, `--output terminal|jsonl` (JSONL facts on stdout, summary on stderr); facts persisted to SQLite.
+- Lab corpus precision 1.0000, recall 0.9167 (fixture, 12 hosts).
+- Limitations: passive sources beyond crt.sh, API-key sources, NS/MX/CNAME derivation, reverse DNS, permutations — later.
+
+## Phase 1 — Foundation (committed)
 
 - Workspace scaffold: core, scope, engine, store, cli; TOML config; CI (fmt/clippy/test).
 - `ScopeGuard` enforces scope on DNS/TCP/redirect hops with IP re-check.

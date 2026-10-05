@@ -1,0 +1,1 @@
+{"domain":"example-lab.test","truth":["www.example-lab.test","mail.example-lab.test","api.example-lab.test","dev.example-lab.test","staging.example-lab.test","portal.example-lab.test","vpn.example-lab.test","git.example-lab.test","cdn.example-lab.test","static.example-lab.test","docs.example-lab.test","ops-web.example-lab.test"],"wildcard_ips":["203.0.113.99"]}

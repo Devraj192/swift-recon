@@ -2,9 +2,10 @@
 
 ## Status
 
-- Phase: 1 Foundation — implemented, verify loop green. Bug-hunt pass applied (see below).
-- Tests: 19 passed (`cargo test --workspace`): core 3, scope 8 (incl. 3 proptest), engine 4, store 2, cli 2.
-- Smoke: `doctor` ok; `scope check` correct for wildcard/label-boundary/exclude/CIDR; `scan --yes` persists empty scan, `--resume` reuses scan id, out-of-scope target recorded not probed, warning shown.
+- Phase: 2 DNS + subdomain discovery — implemented, verify loop green.
+- Tests: 29 passed (`cargo test --workspace`): core 3, scope 8, net 3, discover 7, engine 4, store 2, cli 2.
+- Lab corpus (`lab/`, 12-host fixture, scripted answers): precision 1.0000, recall 0.9167 — above PRD targets (≥0.98 / ≥0.90). Live-DNS lab pending.
+- Smoke: `scan --passive --output jsonl` and active `scan` run end to end; JSONL on stdout, summary on stderr; source failure degrades gracefully (work unit marked failed, scan continues).
 - Verify: `cargo fmt --check` clean, `cargo clippy --all-targets -- -D warnings` clean.
 
 ## Bug-hunt fixes (post-commit review)
@@ -27,7 +28,7 @@
 
 ## Not verified
 
-- Lab precision/recall (Phase 2 gate, lab/ fixtures do not exist yet).
-- Benchmarks, HTML report, TUI (Phases 3-5).
+- Live crt.sh fetch in this sandbox: egress returns HTTP 502, so the passive source was exercised live only through its failure path (correct note + continue). Parsing covered by fixture tests.
+- Live DNS here resolves via sandbox-doctored answers; brute-force found 0 for example.com as expected (no mini-list names exist). Trusted re-validation logic covered by code path, not live proof.
 - `cargo nextest` not installed — used `cargo test` per rules fallback.
 - `since-cutoff` skill is Python-only — N/A for this Rust workspace.

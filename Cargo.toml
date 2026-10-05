@@ -2,6 +2,8 @@
 members = [
     "crates/core",
     "crates/scope",
+    "crates/net",
+    "crates/discover",
     "crates/engine",
     "crates/store",
     "crates/cli",
@@ -18,10 +20,12 @@ anyhow = "1"
 backon = "1"
 clap = { version = "4", features = ["derive"] }
 governor = "0.10"
+hickory-resolver = "0.25"
 ipnet = "2"
 mimalloc = "0.1"
 proptest = "1"
 psl = "2"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls-webpki-roots"] }
 rusqlite = { version = "0.32", features = ["bundled"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -35,6 +39,8 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 url = "2"
 swiftrecon-core = { path = "crates/core" }
 swiftrecon-scope = { path = "crates/scope" }
+swiftrecon-net = { path = "crates/net" }
+swiftrecon-discover = { path = "crates/discover" }
 swiftrecon-engine = { path = "crates/engine" }
 swiftrecon-store = { path = "crates/store" }
 

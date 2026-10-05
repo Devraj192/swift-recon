@@ -142,6 +142,30 @@ impl Store {
         );
     }
 
+    /// Persist one discovered fact. Duplicates merge by replacing the row
+    /// with the union JSON the caller computed (see `Fact::merge`).
+    pub fn insert_fact(&self, fact: &swiftrecon_core::Fact) {
+        let sources = serde_json::to_string(&fact.sources).unwrap_or_else(|_| "[]".to_string());
+        let evidence = serde_json::to_string(&fact.evidence).unwrap_or_else(|_| "[]".to_string());
+        self.send(
+            "INSERT INTO facts (id, scan_id, kind, value, sources_json, evidence_json, confidence, first_seen, last_seen)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+             ON CONFLICT (id) DO UPDATE SET sources_json=excluded.sources_json, evidence_json=excluded.evidence_json,
+             confidence=excluded.confidence, last_seen=excluded.last_seen",
+            vec![
+                fact.id.clone(),
+                fact.scan_id.clone(),
+                fact.kind.clone(),
+                fact.value.clone(),
+                sources,
+                evidence,
+                fact.confidence.value().to_string(),
+                fact.first_seen.to_string(),
+                fact.last_seen.to_string(),
+            ],
+        );
+    }
+
     pub fn upsert_work_unit(&self, scan_id: &str, stage: &str, key: &str, state: WorkState) {
         self.send(
             "INSERT INTO work_units (scan_id, stage, key, state, attempts) VALUES (?1, ?2, ?3, ?4, 0)

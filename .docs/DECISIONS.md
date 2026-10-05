@@ -7,3 +7,7 @@
 - D5: Store writer uses direct autocommit in Phase 1 for correctness; 500-row batching deferred to volume phases. Documented limitation, not hidden.
 - D6: `since-cutoff` skill evaluated — Python-only, not applicable to Rust workspace; pinned versions recorded in `Cargo.lock`.
 - D7: `async-trait` not added (outside fixed stack, would need approval); used RPITIT default trait method instead.
+- D8: reqwest with `default-features = false` + `rustls-tls-webpki-roots` only (avoids native-tls/openssl build pain; Mozilla roots bundled).
+- D9: DNS error mapping verified against hickory-proto 0.25.2 source: NxDomain via `is_nx_domain`, Timeout/RequestRefused via `ProtoErrorKind`, ServFail via `NoRecordsFound{response_code: ServFail}`; all else `Unknown` with raw reason.
+- D10: accuracy gate is fixture-based (`lab/*.json` data files, `.test` domain) pending a live DNS lab; numbers labeled as fixture, not live.
+- D11: lore skill's `.lore/` store not created — project memory stays in `.docs/` per standing docs rule.

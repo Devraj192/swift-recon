@@ -5,7 +5,14 @@ Docs live only in `.docs/` — root `*.md` is gitignored by project rule.
 
 ## Current phase
 
-Phase 1 Foundation (PRD §11). Work only on this phase. One commit per phase.
+Phase 2 DNS + subdomain discovery (PRD §11). Work only on this phase. One commit per phase.
+
+## What exists (Phase 2 adds)
+
+- `crates/net`: `DnsOutcome` (NXDOMAIN/SERVFAIL/timeout/refused distinct), TTL `DnsCache`, `ResolverPool` (google resolvers, per-resolver governor limit, unhealthy skip, scope-gated queries).
+- `crates/discover`: `Source` trait, `CrtShSource` (timeout + per-source failure), `brute_force` (mini wordlist, fresh-lookup re-validation), `detect_wildcard`/`filter_wildcard`, `merge_sources` (agreement boost 0.6→0.85).
+- CLI: `scan --passive`, `--output terminal|jsonl`; facts persisted via `store.insert_fact`.
+- `lab/` accuracy fixture: precision 1.0000, recall 0.9167 (recorded in STATE).
 
 ## What exists (Phase 1)
 
