@@ -1,0 +1,23 @@
+# Build output
+target/
+# Scan databases and outputs
+*.db
+*.db-wal
+*.db-shm
+*.db-journal
+scans/
+*.jsonl
+# Root-level documents stay out of git: all documents live in .docs/
+# (project rule: write docs only in .docs/)
+/*.md
+/docs/
+# Editor / OS noise
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+# Secrets and local overrides
+.env
+*.pem
+*.key

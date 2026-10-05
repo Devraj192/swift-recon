@@ -1,0 +1,44 @@
+[workspace]
+members = [
+    "crates/core",
+    "crates/scope",
+    "crates/engine",
+    "crates/store",
+    "crates/cli",
+]
+resolver = "2"
+
+[workspace.package]
+edition = "2021"
+rust-version = "1.75"
+license = "MIT"
+
+[workspace.dependencies]
+anyhow = "1"
+backon = "1"
+clap = { version = "4", features = ["derive"] }
+governor = "0.10"
+ipnet = "2"
+mimalloc = "0.1"
+proptest = "1"
+psl = "2"
+rusqlite = { version = "0.32", features = ["bundled"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tempfile = "3"
+thiserror = "2"
+tokio = { version = "1", features = ["full"] }
+tokio-util = "0.7"
+toml = "0.8"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+url = "2"
+swiftrecon-core = { path = "crates/core" }
+swiftrecon-scope = { path = "crates/scope" }
+swiftrecon-engine = { path = "crates/engine" }
+swiftrecon-store = { path = "crates/store" }
+
+[profile.release]
+lto = "fat"
+codegen-units = 1
+strip = true

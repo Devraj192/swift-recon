@@ -1,0 +1,16 @@
+[package]
+name = "swiftrecon-engine"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+backon.workspace = true
+governor.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tokio-util.workspace = true
+tracing.workspace = true
+swiftrecon-core.workspace = true

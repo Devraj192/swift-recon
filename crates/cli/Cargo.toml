@@ -1,0 +1,23 @@
+[package]
+name = "swiftrecon"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "swiftrecon"
+path = "src/main.rs"
+
+[dependencies]
+anyhow.workspace = true
+clap.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+swiftrecon-core.workspace = true
+swiftrecon-scope.workspace = true
+swiftrecon-engine.workspace = true
+swiftrecon-store.workspace = true
+mimalloc.workspace = true

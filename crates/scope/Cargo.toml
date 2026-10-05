@@ -1,0 +1,18 @@
+[package]
+name = "swiftrecon-scope"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+ipnet.workspace = true
+psl.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+toml.workspace = true
+url.workspace = true
+swiftrecon-core.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true

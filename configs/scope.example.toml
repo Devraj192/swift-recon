@@ -1,0 +1,12 @@
+[scope]
+include = ["*.example.com", "203.0.113.0/28"]
+exclude = ["admin.example.com"]
+
+[limits]
+max_concurrency = 200
+global_rate = 300
+per_host_rate = 5
+max_depth = 3
+max_urls_per_host = 5000
+max_body_bytes = 2097152
+scan_deadline_secs = 3600

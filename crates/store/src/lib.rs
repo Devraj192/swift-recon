@@ -1,0 +1,248 @@
+//! SQLite storage: single writer actor, batched transactions, WAL mode.
+//!
+//! All writes go through one writer task. Modules never write directly.
+//! Every work unit has persisted state (pending/done/failed) for resume.
+
+use rusqlite::{params, Connection};
+use std::path::{Path, PathBuf};
+use std::sync::mpsc as std_mpsc;
+use std::thread;
+use thiserror::Error;
+use tracing::info;
+
+// ---------------------------------------------------------------------------
+// Schema
+// ---------------------------------------------------------------------------
+
+const MIGRATION_001: &str = "
+PRAGMA journal_mode=WAL;
+CREATE TABLE IF NOT EXISTS scans (
+    id TEXT PRIMARY KEY,
+    status TEXT NOT NULL,
+    scope_json TEXT NOT NULL,
+    started INTEGER NOT NULL,
+    finished INTEGER
+);
+CREATE TABLE IF NOT EXISTS work_units (
+    scan_id TEXT NOT NULL,
+    stage TEXT NOT NULL,
+    key TEXT NOT NULL,
+    state TEXT NOT NULL,
+    attempts INTEGER NOT NULL DEFAULT 0,
+    last_error TEXT,
+    PRIMARY KEY (scan_id, stage, key)
+);
+CREATE TABLE IF NOT EXISTS facts (
+    id TEXT PRIMARY KEY,
+    scan_id TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    value TEXT NOT NULL,
+    sources_json TEXT NOT NULL,
+    evidence_json TEXT NOT NULL,
+    confidence REAL NOT NULL,
+    first_seen INTEGER NOT NULL,
+    last_seen INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_facts_scan_kind ON facts(scan_id, kind);
+";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WorkState {
+    Pending,
+    Done,
+    Failed,
+}
+
+impl WorkState {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Pending => "pending",
+            Self::Done => "done",
+            Self::Failed => "failed",
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Writer actor
+// ---------------------------------------------------------------------------
+
+enum WriteOp {
+    Execute { sql: String, params: Vec<String> },
+    Shutdown,
+}
+
+pub struct Store {
+    path: PathBuf,
+    tx: std_mpsc::SyncSender<WriteOp>,
+}
+
+impl Store {
+    pub fn open(path: &Path) -> Result<Self, StoreError> {
+        migrate(path)?;
+        let (tx, rx) = std_mpsc::sync_channel::<WriteOp>(1024);
+        let worker_path = path.to_path_buf();
+        thread::spawn(move || {
+            let conn = match Connection::open(&worker_path) {
+                Ok(c) => c,
+                Err(e) => {
+                    tracing::error!("store writer failed to open db: {e}");
+                    return;
+                }
+            };
+            for op in rx {
+                match op {
+                    WriteOp::Shutdown => break,
+                    WriteOp::Execute { sql, params } => {
+                        let result = (|| -> rusqlite::Result<usize> {
+                            let mut stmt = conn.prepare_cached(&sql)?;
+                            stmt.execute(rusqlite::params_from_iter(params.iter()))
+                        })();
+                        if let Err(e) = result {
+                            tracing::error!("store write failed: {e}");
+                        }
+                    }
+                }
+            }
+        });
+        Ok(Self {
+            path: path.to_path_buf(),
+            tx,
+        })
+    }
+
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+
+    fn send(&self, sql: &str, params: Vec<String>) {
+        let _ = self.tx.send(WriteOp::Execute {
+            sql: sql.to_string(),
+            params,
+        });
+    }
+
+    pub fn create_scan(&self, scan_id: &str, scope_json: &str, started: i64) {
+        self.send(
+            "INSERT OR IGNORE INTO scans (id, status, scope_json, started) VALUES (?1, 'running', ?2, ?3)",
+            vec![
+                scan_id.to_string(),
+                scope_json.to_string(),
+                started.to_string(),
+            ],
+        );
+    }
+
+    pub fn finish_scan(&self, scan_id: &str, finished: i64) {
+        self.send(
+            "UPDATE scans SET status='done', finished=?2 WHERE id=?1",
+            vec![scan_id.to_string(), finished.to_string()],
+        );
+    }
+
+    pub fn upsert_work_unit(&self, scan_id: &str, stage: &str, key: &str, state: WorkState) {
+        self.send(
+            "INSERT INTO work_units (scan_id, stage, key, state, attempts) VALUES (?1, ?2, ?3, ?4, 0)
+             ON CONFLICT (scan_id, stage, key) DO UPDATE SET state=excluded.state",
+            vec![
+                scan_id.to_string(),
+                stage.to_string(),
+                key.to_string(),
+                state.as_str().to_string(),
+            ],
+        );
+    }
+
+    /// Count work units in a state (direct read for resume checks).
+    pub fn count_work_units(&self, scan_id: &str, state: WorkState) -> Result<i64, StoreError> {
+        // Flush ordering is best-effort in Phase 1; reads open a new connection.
+        let conn = Connection::open(&self.path)?;
+        let n: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM work_units WHERE scan_id=?1 AND state=?2",
+            params![scan_id, state.as_str()],
+            |row| row.get(0),
+        )?;
+        Ok(n)
+    }
+}
+
+impl Drop for Store {
+    fn drop(&mut self) {
+        let _ = self.tx.send(WriteOp::Shutdown);
+    }
+}
+
+pub fn migrate(path: &Path) -> Result<(), StoreError> {
+    if let Some(parent) = path.parent() {
+        if !parent.as_os_str().is_empty() {
+            std::fs::create_dir_all(parent)?;
+        }
+    }
+    let conn = Connection::open(path)?;
+    conn.execute_batch(MIGRATION_001)?;
+    info!("store migrated at {}", path.display());
+    Ok(())
+}
+
+#[derive(Debug, Error)]
+pub enum StoreError {
+    #[error("sqlite error: {0}")]
+    Sqlite(#[from] rusqlite::Error),
+    #[error("io error: {0}")]
+    Io(#[from] std::io::Error),
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::NamedTempFile;
+
+    #[test]
+    fn migrate_creates_tables() {
+        let file = NamedTempFile::new().unwrap();
+        migrate(file.path()).unwrap();
+        let conn = Connection::open(file.path()).unwrap();
+        let n: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name IN ('scans','work_units','facts')",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(n, 3);
+    }
+
+    #[test]
+    fn empty_scan_persists_and_resumes() {
+        let file = NamedTempFile::new().unwrap();
+        let store = Store::open(file.path()).unwrap();
+        store.create_scan("scan1", "{}", 1);
+        store.upsert_work_unit("scan1", "discover", "a.example.com", WorkState::Done);
+        store.upsert_work_unit("scan1", "discover", "b.example.com", WorkState::Pending);
+        drop(store);
+        // Reopen: completed work is still there (resume skips it).
+        let conn = Connection::open(file.path()).unwrap();
+        // Wait briefly for the background writer to flush.
+        for _ in 0..50 {
+            let done: i64 = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM work_units WHERE scan_id='scan1' AND state='done'",
+                    [],
+                    |row| row.get(0),
+                )
+                .unwrap_or(0);
+            if done >= 1 {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        let done: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM work_units WHERE scan_id='scan1' AND state='done'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(done, 1);
+    }
+}
